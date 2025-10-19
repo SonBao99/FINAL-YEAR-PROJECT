@@ -78,7 +78,7 @@ def draw_faces(image, faces):
         
         # Add text showing "Face Detected"
         cv2.putText(output, 'Face Detected', (x, y-10),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
     
     return output
 
