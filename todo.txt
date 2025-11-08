@@ -1,0 +1,112 @@
+AI Attendance System: Comprehensive To-Do List
+Deadline: November 29, 2025
+Milestone 1: Core System End-to-End (Due: Sun, Nov 9)
+Phase 1.0: Environment & Setup
+[ ] Task 1.0.1: Create a new Python virtual environment for the project.
+[x] Task 1.0.2: Install all packages from requirements.txt.
+[x] Task 1.0.3 (CRITICAL): Edit requirements.txt and add requests>=2.32.5 (from RECENT_WORK_REPORT.md).
+[x] Task 1.0.4: Re-run pip install -r requirements.txt to install the new dependency.
+Phase 1.1: API & Kiosk "Smoke Test"
+[x] Task 1.1.1: Open Terminal 1 and start the API server: py -3 -m uvicorn attendance_api:app --reload --port 8000.
+[x] Task 1.1.2: Open Terminal 2 and start the Kiosk client: py -3 kiosk_app.py --api http://localhost:8000 --camera 0 --verbose.
+[~] Task 1.1.3: Verify the kiosk window opens and the API terminal logs the connection attempts (even if they fail). [NOTE: Camera not available, but script works]
+Phase 1.2: API Functionality (Data)
+[x] Task 1.2.1: Create a new script: enroll.py.
+[x] Task 1.2.2: In enroll.py, use the requests library to send 3-5 images of your face to the /api/students/enroll endpoint (found in attendance_api.py).
+[ ] Task 1.2.3: Run enroll.py and confirm the API terminal shows a successful enrollment. [PENDING: Need real face images]
+[x] Task 1.2.4: Create a new script: start_session.py.
+[x] Task 1.2.5: In start_session.py, use requests to call POST /api/sessions to create a new class.
+[~] Task 1.2.6: In start_session.py, use requests to call POST /api/sessions/{id}/start to activate the new session. [CREATED but not started in test]
+Phase 1.3: Debug & Full System Test
+[ ] Task 1.3.1: Run the full end-to-end test:
+Start the API (uvicorn...).
+Run start_session.py to activate a session.
+Run kiosk_app.py.
+[ ] Task 1.3.2: Point the camera at your (enrolled) face and debug all code (kiosk_app.py, attendance_api.py) until the kiosk window shows "Check-in Successful."
+[ ] Task 1.3.3: Manually inspect your database (e.g., SQLite) to confirm a new attendance record was saved.
+Milestone 2: Liveness & Security (Due: Sat, Nov 15)
+Phase 2.0: Liveness Standalone Test
+[ ] Task 2.0.1: pip install mediapipe.
+[ ] Task 2.0.2: Create a new standalone file: test_liveness.py.
+[ ] Task 2.0.3: In this file, write code (using Mediapipe) to capture your webcam feed and print "LIVE" (for a real face) or "FAKE" (for a photo) to the console.
+Phase 2.1: Kiosk Integration
+[ ] Task 2.1.1: Open kiosk_app.py and merge the logic from test_liveness.py into the main video loop.
+[ ] Task 2.1.2: Modify the kiosk logic: it should only send a check-in request to the API if Mediapipe confirms the face is "LIVE".
+[ ] Task 2.1.3: Add text overlay to the OpenCV window to show "Status: LIVE" or "Status: FAKE".
+Phase 2.2: Liveness QA Testing
+[ ] Task 2.2.1 (Genuine Test): Test with your real face. Expected: "LIVE" status, Check-in Successful.
+[ ] Task 2.2.2 (Spoof Test 1): Test with a photo of yourself on your phone. Expected: "FAKE" status, Check-in request is not sent.
+[ ] Task 2.2.3 (Spoof Test 2): Test with a video of yourself on another screen. Expected: "FAKE" status, Check-in request is not sent.
+[ ] Task 2.2.4: Tune Mediapipe parameters until all three tests pass reliably.
+Milestone 3: Evaluation & Results (Due: Tue, Nov 18)
+Phase 3.0: Unit Testing (Pytest)
+[ ] Task 3.0.1: pip install pytest.
+[ ] Task 3.0.2: Create a new file: test_attendance_tracker.py.
+[ ] Task 3.0.3: Write pytest functions to test all methods in attendance_tracker.py (as recommended in RECENT_WORK_REPORT.md):
+[ ] test_save_json()
+[ ] test_load_json()
+[ ] test_save_csv()
+[ ] test_load_csv()
+[ ] test_percent_present()
+[ ] test_mark_absent()
+[ ] Task 3.0.4: Run pytest from your terminal and ensure all tests pass.
+Phase 3.1: Formal Evaluation (Data Collection)
+[ ] Task 3.1.1: Enroll 5 different people (friends, family) using your enroll.py script.
+[ ] Task 3.1.2: Create a new, blank spreadsheet file: evaluation.csv.
+[ ] Task 3.1.3: Start a new test session (using start_session.py).
+[ ] Task 3.1.4: For each of the 5 users, record the results for 10 trials:
+5x "Genuine" trials (real face)
+5x "Spoof" trials (photo on phone)
+[ ] Task 3.1.5: Manually log all 50 results (5 users * 10 trials) in evaluation.csv (e.g., user_id, trial_type, success, actual_result).
+Phase 3.2: Results Analysis (Data Science)
+[ ] Task 3.2.1: pip install pandas matplotlib seaborn.
+[ ] Task 3.2.2: Create a new script: analyze_results.py.
+[ ] Task 3.2.3: In analyze_results.py, load evaluation.csv into a Pandas DataFrame.
+[ ] Task 3.2.4: Calculate and print the final metrics (from RECENT_WORK_REPORT.md):
+[ ] Precision
+[ ] Recall
+[ ] F1-Score
+[ ] False Acceptance Rate (FAR)
+[ ] False Rejection Rate (FRR)
+[ ] Task 3.2.5: Use Matplotlib/Seaborn to generate a Confusion Matrix and save it as confusion_matrix.png.
+Milestone 4: Final Report (Due: Sun, Nov 23)
+[ ] Task 4.1 (Report - Section 1): Write Section 1: Abstract (1-page summary of the whole project, write this last).
+[ ] Task 4.2 (Report - Section 2): Write Section 2: Introduction (Use Project Proposal.docx [cite: 3-11, 53-60]).
+[ ] Task 4.3 (Report - Section 3): Write Section 3: Literature Review
+[ ] 3.1 Review of Domain (Use Project Proposal.docx [cite: 12-20]).
+[ ] 3.3 Review of Methodologies (Use Project Proposal.docx [cite: 21-52], explain Python, OpenCV, DeepFace choices).
+[ ] Add summaries of 2-3 academic papers.
+[ ] Task 4.4 (Report - Section 4): Write Section 4: Requirement Analysis (Use research on VNU, FPT [cite: 8-11] as "Similar Applications").
+[ ] Task 4.5 (Report - Section 5): Write Section 5: Software Design
+[ ] 5.1 Architecture (Add the [Kiosk] -> [API] -> [DB] diagram and explanation).
+[ ] 5.2 GUI (Add screenshots of the kiosk in action: "LIVE", "FAKE", "Successful").
+[ ] 5.3 DB (Describe the database schema: students, sessions, attendance_records tables).
+[ ] 5.4 UML (Create a simple class diagram for AttendanceTracker).
+[ ] Task 4.6 (Report - Section 6): Write Section 6: Software Implementation
+[ ] 6.1 Development Environment (List hardware and all packages from requirements.txt).
+[ ] 6.2 Important technical problems & solutions (Write up the "Spoofing Problem" and "Mediapipe Liveness Solution").
+[ ] 6.3 Test (Describe Unit Tests, paste pytest output. Describe Evaluation Protocol).
+[ ] 6.4 Results (Add the "Results Table" from RECENT_WORK_REPORT.md filled with your metrics. Add confusion_matrix.png).
+[ ] Task 4.7 (Report - Section 7): Write Section 7: Evaluation and Conclusion
+[ ] 7.1 Evaluation of results (Explain what your metrics mean, e.g., "The high F1-score of 0.95...").
+[ ] 7.2 Conclusion (Pros/Cons, Lessons Learnt).
+[ ] Future improvements (CRITICAL: Mention the features we cut: Emotion Analysis [cite: 74-83] and CentroidTracker [cite: RECENT_WORK_REPORT.md]).
+[ ] Task 4.8 (Report - Section 8): Write Section 8: Appendix
+[ ] Add README.md content (See Phase 5).
+[ ] Add more code snippets (from kiosk_app.py, attendance_api.py).
+[ ] Add more screenshots (API terminal, enroll.py running, etc.).
+[ ] Task 4.9 (Report - Polish): Run spell-checker and grammar-checker on the entire document.
+[ ] Task 4.10 (Report - Finalize): Export the final 70-page document as Final_Report.pdf.
+Milestone 5: Final Submission (Due: Sat, Nov 29)
+[ ] Task 5.1: Create a high-quality README.md file at the project root.
+[ ] Task 5.2: Add step-by-step instructions to the README.md:
+pip install -r requirements.txt
+py -3 -m uvicorn attendance_api:app --reload
+py -3 enroll.py (Explain how to use it)
+py -3 start_session.py
+py -3 kiosk_app.py --api http://localhost:8000
+[ ] Task 5.3: Run a final end-to-end test using only the instructions in your README.md.
+[ ] Task 5.4: Create the final Final_Project.zip file containing all your code.
+[ ] Task 5.5: Create the final Final_Report.pdf (from Task 4.10).
+[ ] Task 5.6: Compose your submission email, attach the two final files, and click Send.
+[ ] Task 5.7: Project Complete.

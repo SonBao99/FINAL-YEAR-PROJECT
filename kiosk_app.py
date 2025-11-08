@@ -6,11 +6,15 @@ import time
 import numpy as np
 from datetime import datetime
 import os
+import argparse
+import sys
 
 class AttendanceKiosk:
-    def __init__(self, api_base_url="http://localhost:8000", session_id=None):
+    def __init__(self, api_base_url="http://localhost:8000", session_id=None, camera_index=0, verbose=False):
         self.api_base_url = api_base_url
         self.session_id = session_id
+        self.camera_index = camera_index
+        self.verbose = verbose
         self.cap = None
         self.last_recognition_time = 0
         self.recognition_cooldown = 3  # seconds between recognitions
@@ -18,10 +22,16 @@ class AttendanceKiosk:
     def start_kiosk(self):
         """Start the kiosk application"""
         print("Starting Attendance Kiosk...")
+        print(f"API URL: {self.api_base_url}")
+        print(f"Camera Index: {self.camera_index}")
+        if self.session_id:
+            print(f"Session ID: {self.session_id}")
+        else:
+            print("No session ID specified - Press 's' to select session")
         print("Press 'q' to quit, 's' to select session")
         
         # Initialize webcam
-        self.cap = cv2.VideoCapture(0)
+        self.cap = cv2.VideoCapture(self.camera_index)
         if not self.cap.isOpened():
             print("Error: Could not open webcam")
             return
@@ -110,6 +120,9 @@ class AttendanceKiosk:
             _, buffer = cv2.imencode('.jpg', face_image)
             image_base64 = base64.b64encode(buffer).decode('utf-8')
             
+            if self.verbose:
+                print(f"[VERBOSE] Sending face recognition request to {self.api_base_url}/api/attendance/check-in")
+            
             # Send to API
             response = requests.post(
                 f"{self.api_base_url}/api/attendance/check-in",
@@ -118,56 +131,142 @@ class AttendanceKiosk:
                 timeout=5
             )
             
+            if self.verbose:
+                print(f"[VERBOSE] Response status: {response.status_code}")
+            
             if response.status_code == 200:
                 result = response.json()
                 if result.get("success"):
-                    return f"Welcome {result.get('student_name', 'Unknown')}!"
+                    message = f"Welcome {result.get('student_name', 'Unknown')}!"
+                    if self.verbose:
+                        print(f"[VERBOSE] Recognition successful: {message}")
+                    return message
                 else:
-                    return result.get("message", "Recognition failed")
+                    message = result.get("message", "Recognition failed")
+                    if self.verbose:
+                        print(f"[VERBOSE] Recognition failed: {message}")
+                    return message
             else:
+                if self.verbose:
+                    print(f"[VERBOSE] API returned error status: {response.status_code} - {response.text}")
                 return "API Error"
                 
         except requests.exceptions.RequestException as e:
-            print(f"API request failed: {e}")
+            if self.verbose:
+                print(f"[VERBOSE] API request failed: {e}")
             return "Connection Error"
         except Exception as e:
-            print(f"Recognition error: {e}")
+            if self.verbose:
+                print(f"[VERBOSE] Recognition error: {e}")
             return "Error"
     
     def select_session(self):
         """Allow user to select an active session"""
         try:
-            # Get active sessions from API
-            response = requests.get(f"{self.api_base_url}/api/sessions/active")
+            # Get all sessions from API (we'll filter active ones)
+            response = requests.get(f"{self.api_base_url}/api/sessions")
             if response.status_code == 200:
-                sessions = response.json()
-                if sessions:
-                    print("\nAvailable sessions:")
-                    for i, session in enumerate(sessions):
+                all_sessions = response.json()
+                # Filter for active sessions
+                active_sessions = [s for s in all_sessions if s.get('is_active', False)]
+                
+                if active_sessions:
+                    print("\nAvailable active sessions:")
+                    for i, session in enumerate(active_sessions):
                         print(f"{i+1}. {session['session_name']} (ID: {session['id']})")
                     
                     try:
                         choice = int(input("Select session number: ")) - 1
-                        if 0 <= choice < len(sessions):
-                            self.session_id = sessions[choice]['id']
-                            print(f"Selected session: {sessions[choice]['session_name']}")
+                        if 0 <= choice < len(active_sessions):
+                            self.session_id = active_sessions[choice]['id']
+                            print(f"Selected session: {active_sessions[choice]['session_name']}")
                         else:
                             print("Invalid selection")
                     except ValueError:
                         print("Invalid input")
                 else:
                     print("No active sessions available")
+                    print("\nAll sessions:")
+                    for i, session in enumerate(all_sessions):
+                        status = "ACTIVE" if session.get('is_active', False) else "INACTIVE"
+                        print(f"{i+1}. {session['session_name']} (ID: {session['id']}) - {status}")
+                    print("\nNote: You can start a session using start_session.py")
             else:
-                print("Failed to fetch sessions")
+                print(f"Failed to fetch sessions: {response.status_code} - {response.text}")
         except Exception as e:
             print(f"Error selecting session: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
 
 def main():
-    kiosk = AttendanceKiosk()
-    kiosk.start_kiosk()
+    parser = argparse.ArgumentParser(
+        description="AI Attendance Kiosk - Face recognition attendance system",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Start kiosk with default settings
+  python kiosk_app.py
+  
+  # Start with custom API URL and camera
+  python kiosk_app.py --api http://localhost:8000 --camera 0
+  
+  # Start with session ID and verbose mode
+  python kiosk_app.py --api http://localhost:8000 --session 1 --verbose
+  
+  # Start with all options
+  python kiosk_app.py --api http://localhost:8000 --camera 0 --session 1 --verbose
+        """
+    )
+    
+    parser.add_argument(
+        '--api',
+        type=str,
+        default='http://localhost:8000',
+        help='API base URL (default: http://localhost:8000)'
+    )
+    
+    parser.add_argument(
+        '--camera',
+        type=int,
+        default=0,
+        help='Camera index (default: 0)'
+    )
+    
+    parser.add_argument(
+        '--session',
+        type=int,
+        default=None,
+        help='Session ID to use (optional, can be selected later with \'s\' key)'
+    )
+    
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Enable verbose logging'
+    )
+    
+    args = parser.parse_args()
+    
+    # Create kiosk instance
+    kiosk = AttendanceKiosk(
+        api_base_url=args.api,
+        session_id=args.session,
+        camera_index=args.camera,
+        verbose=args.verbose
+    )
+    
+    try:
+        kiosk.start_kiosk()
+    except KeyboardInterrupt:
+        print("\n\nKiosk stopped by user.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\nError: {e}")
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
-```
-
-```
