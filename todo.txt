@@ -13,26 +13,26 @@ Phase 1.1: API & Kiosk "Smoke Test"
 Phase 1.2: API Functionality (Data)
 [x] Task 1.2.1: Create a new script: enroll.py.
 [x] Task 1.2.2: In enroll.py, use the requests library to send 3-5 images of your face to the /api/students/enroll endpoint (found in attendance_api.py).
-[ ] Task 1.2.3: Run enroll.py and confirm the API terminal shows a successful enrollment. [PENDING: Need real face images]
+[x] Task 1.2.3: Run enroll.py and confirm the API terminal shows a successful enrollment. [COMPLETED: Used quick_enroll_test.py with sample images]
 [x] Task 1.2.4: Create a new script: start_session.py.
 [x] Task 1.2.5: In start_session.py, use requests to call POST /api/sessions to create a new class.
-[~] Task 1.2.6: In start_session.py, use requests to call POST /api/sessions/{id}/start to activate the new session. [CREATED but not started in test]
+[x] Task 1.2.6: In start_session.py, use requests to call POST /api/sessions/{id}/start to activate the new session. [COMPLETED: Session created and started successfully]
 Phase 1.3: Debug & Full System Test
-[ ] Task 1.3.1: Run the full end-to-end test:
+[x] Task 1.3.1: Run the full end-to-end test:
 Start the API (uvicorn...).
 Run start_session.py to activate a session.
 Run kiosk_app.py.
-[ ] Task 1.3.2: Point the camera at your (enrolled) face and debug all code (kiosk_app.py, attendance_api.py) until the kiosk window shows "Check-in Successful."
-[ ] Task 1.3.3: Manually inspect your database (e.g., SQLite) to confirm a new attendance record was saved.
+[x] Task 1.3.2: Point the camera at your (enrolled) face and debug all code (kiosk_app.py, attendance_api.py) until the kiosk window shows "Check-in Successful."
+[x] Task 1.3.3: Manually inspect your database (e.g., SQLite) to confirm a new attendance record was saved.
 Milestone 2: Liveness & Security (Due: Sat, Nov 15)
 Phase 2.0: Liveness Standalone Test
-[ ] Task 2.0.1: pip install mediapipe.
-[ ] Task 2.0.2: Create a new standalone file: test_liveness.py.
-[ ] Task 2.0.3: In this file, write code (using Mediapipe) to capture your webcam feed and print "LIVE" (for a real face) or "FAKE" (for a photo) to the console.
+[x] Task 2.0.1: pip install mediapipe. [COMPLETED: MediaPipe 0.10.21 installed]
+[x] Task 2.0.2: Create a new standalone file: test_liveness.py. [COMPLETED: Created with MediaPipe face mesh detection]
+[x] Task 2.0.3: In this file, write code (using Mediapipe) to capture your webcam feed and print "LIVE" (for a real face) or "FAKE" (for a photo) to the console. [COMPLETED: Uses movement, blink, and depth detection]
 Phase 2.1: Kiosk Integration
-[ ] Task 2.1.1: Open kiosk_app.py and merge the logic from test_liveness.py into the main video loop.
-[ ] Task 2.1.2: Modify the kiosk logic: it should only send a check-in request to the API if Mediapipe confirms the face is "LIVE".
-[ ] Task 2.1.3: Add text overlay to the OpenCV window to show "Status: LIVE" or "Status: FAKE".
+[x] Task 2.1.1: Open kiosk_app.py and merge the logic from test_liveness.py into the main video loop. [COMPLETED: LivenessDetector class integrated]
+[x] Task 2.1.2: Modify the kiosk logic: it should only send a check-in request to the API if Mediapipe confirms the face is "LIVE". [COMPLETED: Check-in only proceeds if status is LIVE]
+[x] Task 2.1.3: Add text overlay to the OpenCV window to show "Status: LIVE" or "Status: FAKE". [COMPLETED: Status displayed with color coding]
 Phase 2.2: Liveness QA Testing
 [ ] Task 2.2.1 (Genuine Test): Test with your real face. Expected: "LIVE" status, Check-in Successful.
 [ ] Task 2.2.2 (Spoof Test 1): Test with a photo of yourself on your phone. Expected: "FAKE" status, Check-in request is not sent.

@@ -5,11 +5,110 @@ import time
 from datetime import datetime
 import base64
 import json
+from collections import deque
 
 import cv2
 import numpy as np
 import requests
 import sys
+import mediapipe as mp
+
+
+class LivenessDetector:
+    """Liveness detection using MediaPipe Face Mesh"""
+    def __init__(self):
+        self.mp_face_mesh = mp.solutions.face_mesh
+        self.face_mesh = self.mp_face_mesh.FaceMesh(
+            static_image_mode=False,
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+        
+        # Eye landmarks
+        self.LEFT_EYE_INDICES = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
+        self.RIGHT_EYE_INDICES = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+        
+        self.face_positions = deque(maxlen=10)
+        self.blink_history = deque(maxlen=5)
+        
+        self.MOVEMENT_THRESHOLD = 0.02
+        self.BLINK_THRESHOLD = 0.25
+        self.MIN_FRAMES_FOR_LIVE = 10
+        self.frame_count = 0
+        
+    def calculate_eye_aspect_ratio(self, landmarks, eye_indices):
+        """Calculate Eye Aspect Ratio for blink detection"""
+        eye_points = np.array([(landmarks[i].x, landmarks[i].y) for i in eye_indices])
+        vertical_1 = np.linalg.norm(eye_points[1] - eye_points[7])
+        vertical_2 = np.linalg.norm(eye_points[2] - eye_points[6])
+        horizontal = np.linalg.norm(eye_points[0] - eye_points[4])
+        ear = (vertical_1 + vertical_2) / (2.0 * horizontal) if horizontal > 0 else 0
+        return ear
+    
+    def detect_movement(self, landmarks):
+        """Detect face movement"""
+        if len(landmarks) == 0:
+            return False
+        nose_tip = np.array([landmarks[4].x, landmarks[4].y])
+        self.face_positions.append(nose_tip)
+        if len(self.face_positions) < 2:
+            return False
+        positions_array = np.array(list(self.face_positions))
+        movement = np.std(positions_array, axis=0)
+        return np.sum(movement) > self.MOVEMENT_THRESHOLD
+    
+    def detect_blink(self, landmarks):
+        """Detect blinking"""
+        left_ear = self.calculate_eye_aspect_ratio(landmarks, self.LEFT_EYE_INDICES)
+        right_ear = self.calculate_eye_aspect_ratio(landmarks, self.RIGHT_EYE_INDICES)
+        avg_ear = (left_ear + right_ear) / 2.0
+        self.blink_history.append(avg_ear)
+        if len(self.blink_history) < 3:
+            return False
+        recent_ears = list(self.blink_history)
+        if len(recent_ears) >= 3:
+            if recent_ears[-2] < self.BLINK_THRESHOLD and recent_ears[-1] > self.BLINK_THRESHOLD:
+                return True
+        return False
+    
+    def detect_liveness(self, frame):
+        """Detect if face is LIVE or FAKE"""
+        self.frame_count += 1
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.face_mesh.process(rgb_frame)
+        
+        if not results.multi_face_landmarks:
+            return "NO_FACE", {}
+        
+        landmarks = results.multi_face_landmarks[0].landmark
+        
+        has_movement = self.detect_movement(landmarks)
+        has_blink = self.detect_blink(landmarks)
+        
+        z_coords = [lm.z for lm in landmarks]
+        depth_variance = np.var(z_coords)
+        has_depth = depth_variance > 0.0001
+        
+        liveness_score = sum([has_movement, has_blink, has_depth])
+        
+        if self.frame_count < self.MIN_FRAMES_FOR_LIVE:
+            status = "CHECKING"
+        elif liveness_score >= 2:
+            status = "LIVE"
+        else:
+            status = "FAKE"
+        
+        metadata = {
+            "has_movement": has_movement,
+            "has_blink": has_blink,
+            "has_depth": has_depth,
+            "liveness_score": liveness_score,
+            "frame_count": self.frame_count
+        }
+        
+        return status, metadata
 
 
 class AttendanceKiosk:
@@ -28,6 +127,10 @@ class AttendanceKiosk:
         self.snapshot_dir = os.path.join(os.getcwd(), "kiosk_snapshots") if save_snapshots else None
         self.last_status_message = ""
         self.last_status_time = 0.0
+        # Initialize liveness detector
+        self.liveness_detector = LivenessDetector()
+        self.current_liveness_status = "CHECKING"
+        self.current_liveness_metadata = {}
 
     def start_kiosk(self):
         """Start the kiosk application"""
@@ -110,38 +213,64 @@ class AttendanceKiosk:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(30, 30))
 
+        # Detect liveness on full frame
+        liveness_status, liveness_metadata = self.liveness_detector.detect_liveness(frame)
+        self.current_liveness_status = liveness_status
+        self.current_liveness_metadata = liveness_metadata
+        
         # Draw rectangles around detected faces
         for (x, y, w, h) in faces:
-            cv2.rectangle(display_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            # Color based on liveness status
+            if liveness_status == "LIVE":
+                face_color = (0, 255, 0)  # Green
+            elif liveness_status == "FAKE":
+                face_color = (0, 0, 255)  # Red
+            else:
+                face_color = (0, 255, 255)  # Yellow (checking)
+            
+            cv2.rectangle(display_frame, (x, y), (x + w, y + h), face_color, 2)
 
             # Check if we should attempt recognition
             current_time = time.time()
             if (self.session_id and
                     current_time - self.last_recognition_time > self.recognition_cooldown):
 
-                # Extract face region (expand slightly to include features)
-                pad = int(0.15 * max(w, h))
-                x0 = max(0, x - pad)
-                y0 = max(0, y - pad)
-                x1 = min(frame.shape[1], x + w + pad)
-                y1 = min(frame.shape[0], y + h + pad)
-                face_region = frame[y0:y1, x0:x1]
+                # Only proceed if face is LIVE
+                if liveness_status == "LIVE":
+                    # Extract face region (expand slightly to include features)
+                    pad = int(0.15 * max(w, h))
+                    x0 = max(0, x - pad)
+                    y0 = max(0, y - pad)
+                    x1 = min(frame.shape[1], x + w + pad)
+                    y1 = min(frame.shape[0], y + h + pad)
+                    face_region = frame[y0:y1, x0:x1]
 
-                # Attempt face recognition
-                result, metadata = self.recognize_face(face_region)
+                    # Attempt face recognition
+                    result, metadata = self.recognize_face(face_region)
 
-                if result:
-                    # Draw recognition result
-                    cv2.putText(display_frame, result, (x, y - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    self.last_recognition_time = current_time
-                    self.last_status_message = result
+                    if result:
+                        # Draw recognition result
+                        cv2.putText(display_frame, result, (x, y - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        self.last_recognition_time = current_time
+                        self.last_status_message = result
+                        self.last_status_time = current_time
+                        # optionally save snapshot
+                        if self.save_snapshots and face_region is not None:
+                            label = metadata.get("student_name") if metadata else None
+                            self.save_snapshot(face_region, label)
+                elif liveness_status == "FAKE":
+                    # Show that check-in is blocked due to fake face
+                    if self.verbose:
+                        logging.info("Check-in blocked: Face detected as FAKE")
+                    self.last_status_message = "Check-in blocked: FAKE face detected"
                     self.last_status_time = current_time
-                    # optionally save snapshot
-                    if self.save_snapshots and face_region is not None:
-                        label = metadata.get("student_name") if metadata else None
-                        self.save_snapshot(face_region, label)
 
+        # Draw liveness status
+        liveness_color = (0, 255, 0) if liveness_status == "LIVE" else (0, 0, 255) if liveness_status == "FAKE" else (0, 255, 255)
+        cv2.putText(display_frame, f"Status: {liveness_status}", (10, 60),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, liveness_color, 2)
+        
         # Add instructions
         cv2.putText(display_frame, "Look at the camera for attendance", (10, display_frame.shape[0] - 40),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
@@ -167,7 +296,10 @@ class AttendanceKiosk:
             if self.verbose:
                 logging.debug("Sending face recognition request to %s/api/attendance/check-in", self.api_base_url)
 
-            payload = {"face_image_base64": image_base64}
+            payload = {
+                "session_id": self.session_id,
+                "face_image_base64": image_base64
+            }
 
             # Send to API with simple retry
             attempts = 2
@@ -176,7 +308,6 @@ class AttendanceKiosk:
                 try:
                     response = requests.post(
                         f"{self.api_base_url}/api/attendance/check-in",
-                        params={"session_id": self.session_id},
                         json=payload,
                         timeout=5
                     )

@@ -27,13 +27,13 @@ def create_course(course_code, course_name, lecturer_name, description=None, api
         response = requests.post(f"{api_url}/api/courses", json=course_data)
         if response.status_code == 200:
             result = response.json()
-            print(f"✓ Course created: {result['course_code']} - {result['course_name']}")
+            print(f"[OK] Course created: {result['course_code']} - {result['course_name']}")
             return result['id']
         else:
-            print(f"✗ Error creating course: {response.text}")
+            print(f"[ERROR] Error creating course: {response.text}")
             return None
     except requests.exceptions.RequestException as e:
-        print(f"✗ API request failed: {e}")
+        print(f"[ERROR] API request failed: {e}")
         return None
 
 def create_session(course_id, session_name, scheduled_start, scheduled_end, room_location=None, api_url="http://localhost:8000"):
@@ -51,13 +51,13 @@ def create_session(course_id, session_name, scheduled_start, scheduled_end, room
         response = requests.post(f"{api_url}/api/sessions", json=session_data)
         if response.status_code == 200:
             result = response.json()
-            print(f"✓ Session created: {result['session_name']} (ID: {result['id']})")
+            print(f"[OK] Session created: {result['session_name']} (ID: {result['id']})")
             return result['id']
         else:
-            print(f"✗ Error creating session: {response.text}")
+            print(f"[ERROR] Error creating session: {response.text}")
             return None
     except requests.exceptions.RequestException as e:
-        print(f"✗ API request failed: {e}")
+        print(f"[ERROR] API request failed: {e}")
         return None
 
 def start_session(session_id, api_url="http://localhost:8000"):
@@ -66,13 +66,21 @@ def start_session(session_id, api_url="http://localhost:8000"):
         response = requests.post(f"{api_url}/api/sessions/{session_id}/start")
         if response.status_code == 200:
             result = response.json()
-            print(f"✓ Session started successfully!")
+            print(f"[OK] Session started successfully!")
             return True
         else:
-            print(f"✗ Error starting session: {response.text}")
+            print(f"[ERROR] Error starting session: {response.text}")
             return False
     except requests.exceptions.RequestException as e:
-        print(f"✗ API request failed: {e}")
+        print(f"[ERROR] API request failed: {e}")
+        return False
+
+def check_api_connection(api_url="http://localhost:8000"):
+    """Check if API is reachable"""
+    try:
+        response = requests.get(f"{api_url}/api/sessions", timeout=3)
+        return response.status_code == 200
+    except:
         return False
 
 def main():
@@ -84,6 +92,15 @@ def main():
     # Get API URL
     api_url = os.getenv("API_URL", "http://localhost:8000")
     print(f"\nAPI URL: {api_url}")
+    
+    # Check API connection
+    print("Checking API connection...")
+    if not check_api_connection(api_url):
+        print(f"[ERROR] Cannot connect to API at {api_url}")
+        print("  Make sure the API server is running:")
+        print("  python -m uvicorn attendance_api:app --reload --port 8000")
+        return
+    print("[OK] API connection successful")
     
     # Course information
     print("\n--- Course Information ---")
@@ -113,7 +130,11 @@ def main():
     
     # Session information
     print("\n--- Session Information ---")
-    session_name = input("Enter session name (e.g., 'Lecture 1', 'Lab Session'): ").strip()
+    while True:
+        session_name = input("Enter session name (e.g., 'Lecture 1', 'Lab Session'): ").strip()
+        if session_name:
+            break
+        print("Session name cannot be empty. Please enter a name.")
     
     # Get scheduled times
     print("\nEnter scheduled start time:")
@@ -169,7 +190,7 @@ def main():
         print("Starting session...")
         if start_session(session_id, api_url):
             print("\n" + "=" * 50)
-            print(f"✓ Session is now active!")
+            print(f"[OK] Session is now active!")
             print(f"  Session ID: {session_id}")
             print(f"  Session Name: {session_name}")
             print(f"  You can now use this session ID in the kiosk app")
@@ -178,7 +199,7 @@ def main():
             print("\nSession created but failed to start. You can start it later.")
     else:
         print("\n" + "=" * 50)
-        print(f"✓ Session created (not started yet)")
+        print(f"[OK] Session created (not started yet)")
         print(f"  Session ID: {session_id}")
         print(f"  Session Name: {session_name}")
         print(f"  To start it later, use: POST /api/sessions/{session_id}/start")

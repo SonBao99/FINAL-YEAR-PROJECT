@@ -67,6 +67,10 @@ class AttendanceResponse(BaseModel):
     confidence_score: Optional[float]
     status: str
 
+class CheckInRequest(BaseModel):
+    session_id: int
+    face_image_base64: str
+
 # Create database tables on startup
 @app.on_event("startup")
 async def startup_event():
@@ -262,15 +266,14 @@ async def websocket_endpoint(websocket: WebSocket, session_id: int):
 # Face recognition endpoint for kiosk
 @app.post("/api/attendance/check-in")
 async def check_in_student(
-    session_id: int,
-    face_image_base64: str,
+    request: CheckInRequest,
     db: Session = Depends(get_db)
 ):
     """Process face recognition and mark attendance"""
     
     # Get active session
     session = db.query(Session).filter(
-        Session.id == session_id,
+        Session.id == request.session_id,
         Session.is_active == True
     ).first()
     
@@ -279,7 +282,7 @@ async def check_in_student(
     
     # Decode and process image
     try:
-        image_data = base64.b64decode(face_image_base64)
+        image_data = base64.b64decode(request.face_image_base64)
         nparr = np.frombuffer(image_data, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -312,7 +315,7 @@ async def check_in_student(
             # Check if already checked in
             existing_record = db.query(AttendanceRecord).filter(
                 AttendanceRecord.student_id == best_match.id,
-                AttendanceRecord.session_id == session_id
+                AttendanceRecord.session_id == request.session_id
             ).first()
             
             if existing_record:
@@ -321,7 +324,7 @@ async def check_in_student(
             # Create attendance record
             attendance_record = AttendanceRecord(
                 student_id=best_match.id,
-                session_id=session_id,
+                session_id=request.session_id,
                 check_in_time=datetime.utcnow(),
                 confidence_score=1 - best_distance,  # Convert distance to confidence
                 status="present"
@@ -331,7 +334,7 @@ async def check_in_student(
             db.commit()
             
             # Notify web dashboard via WebSocket
-            await manager.broadcast_to_session(session_id, {
+            await manager.broadcast_to_session(request.session_id, {
                 "type": "attendance_update",
                 "student_name": best_match.name,
                 "student_id": best_match.student_id,
