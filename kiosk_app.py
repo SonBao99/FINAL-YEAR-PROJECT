@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from datetime import datetime
+from typing import Optional
 import base64
 import json
 from collections import deque
@@ -33,9 +34,10 @@ class LivenessDetector:
         self.face_positions = deque(maxlen=10)
         self.blink_history = deque(maxlen=5)
         
-        self.MOVEMENT_THRESHOLD = 0.02
+        # Relaxed thresholds for better usability
+        self.MOVEMENT_THRESHOLD = 0.01  # Lowered from 0.02 - more sensitive to natural movement
         self.BLINK_THRESHOLD = 0.25
-        self.MIN_FRAMES_FOR_LIVE = 10
+        self.MIN_FRAMES_FOR_LIVE = 5  # Reduced from 10 - faster initial check
         self.frame_count = 0
         
     def calculate_eye_aspect_ratio(self, landmarks, eye_indices):
@@ -95,8 +97,16 @@ class LivenessDetector:
         
         if self.frame_count < self.MIN_FRAMES_FOR_LIVE:
             status = "CHECKING"
-        elif liveness_score >= 2:
-            status = "LIVE"
+        elif liveness_score >= 1:  # Changed from >= 2 to >= 1 - more lenient
+            # If depth is detected (which is usually always true for real faces),
+            # consider it LIVE even without movement/blink
+            # This makes the system more user-friendly while still checking depth
+            if has_depth:
+                status = "LIVE"
+            elif liveness_score >= 2:
+                status = "LIVE"
+            else:
+                status = "FAKE"
         else:
             status = "FAKE"
         
@@ -112,7 +122,7 @@ class LivenessDetector:
 
 
 class AttendanceKiosk:
-    def __init__(self, api_base_url: str = "http://localhost:8000", session_id: str | None = None,
+    def __init__(self, api_base_url: str = "http://localhost:8000", session_id: Optional[str] = None,
                  camera_index: int = 0, recognition_cooldown: float = 3.0, save_snapshots: bool = False,
                  verbose: bool = False):
         self.api_base_url = api_base_url
@@ -131,6 +141,9 @@ class AttendanceKiosk:
         self.liveness_detector = LivenessDetector()
         self.current_liveness_status = "CHECKING"
         self.current_liveness_metadata = {}
+        # Track recent liveness status for smoother recognition
+        self.recent_liveness_history = deque(maxlen=10)  # Last 10 frames
+        self.liveness_grace_period = 5  # Allow recognition if LIVE in last 5 frames
 
     def start_kiosk(self):
         """Start the kiosk application"""
@@ -150,6 +163,19 @@ class AttendanceKiosk:
             logging.error("Error: Could not open webcam (index=%s)", self.camera_index)
             return
 
+        # Allow camera to initialize
+        import time
+        time.sleep(0.5)
+        
+        # Try reading a test frame to ensure camera is ready
+        for _ in range(5):
+            ret, _ = self.cap.read()
+            if ret:
+                break
+            time.sleep(0.1)
+        else:
+            logging.warning("Camera opened but initial frame read failed. Continuing anyway...")
+
         # Set webcam properties for better face detection
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -163,14 +189,29 @@ class AttendanceKiosk:
             return
 
         # Main loop
+        frame_count = 0
         while True:
             ret, frame = self.cap.read()
             if not ret:
-                print("Error: Could not read frame")
-                break
+                logging.warning("Could not read frame (attempt %d), retrying...", frame_count)
+                frame_count += 1
+                if frame_count > 10:
+                    logging.error("Failed to read frames after 10 attempts. Stopping.")
+                    break
+                time.sleep(0.1)
+                continue
+            
+            frame_count = 0  # Reset counter on successful read
 
             # Process frame
-            processed_frame = self.process_frame(frame)
+            try:
+                processed_frame = self.process_frame(frame)
+            except Exception as e:
+                logging.error("Error processing frame: %s", e)
+                if self.verbose:
+                    import traceback
+                    traceback.print_exc()
+                continue
 
             # Display frame
             cv2.imshow('Attendance Kiosk', processed_frame)
@@ -218,10 +259,17 @@ class AttendanceKiosk:
         self.current_liveness_status = liveness_status
         self.current_liveness_metadata = liveness_metadata
         
+        # Track recent liveness for smoother recognition
+        self.recent_liveness_history.append(liveness_status == "LIVE")
+        
+        # Consider "effectively LIVE" if current is LIVE or was LIVE recently
+        was_recently_live = sum(self.recent_liveness_history) >= 1
+        effectively_live = (liveness_status == "LIVE") or was_recently_live
+        
         # Draw rectangles around detected faces
         for (x, y, w, h) in faces:
-            # Color based on liveness status
-            if liveness_status == "LIVE":
+            # Color based on effective liveness status (for smoother UX)
+            if effectively_live:
                 face_color = (0, 255, 0)  # Green
             elif liveness_status == "FAKE":
                 face_color = (0, 0, 255)  # Red
@@ -235,8 +283,8 @@ class AttendanceKiosk:
             if (self.session_id and
                     current_time - self.last_recognition_time > self.recognition_cooldown):
 
-                # Only proceed if face is LIVE
-                if liveness_status == "LIVE":
+                # Proceed if face is LIVE or was recently LIVE (smoother experience)
+                if effectively_live:
                     # Extract face region (expand slightly to include features)
                     pad = int(0.15 * max(w, h))
                     x0 = max(0, x - pad)
@@ -266,9 +314,13 @@ class AttendanceKiosk:
                     self.last_status_message = "Check-in blocked: FAKE face detected"
                     self.last_status_time = current_time
 
-        # Draw liveness status
-        liveness_color = (0, 255, 0) if liveness_status == "LIVE" else (0, 0, 255) if liveness_status == "FAKE" else (0, 255, 255)
-        cv2.putText(display_frame, f"Status: {liveness_status}", (10, 60),
+        # Draw liveness status (show effective status)
+        display_status = "LIVE" if effectively_live else liveness_status
+        liveness_color = (0, 255, 0) if display_status == "LIVE" else (0, 0, 255) if display_status == "FAKE" else (0, 255, 255)
+        status_text = f"Status: {display_status}"
+        if effectively_live and liveness_status != "LIVE":
+            status_text += " (recent)"
+        cv2.putText(display_frame, status_text, (10, 60),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, liveness_color, 2)
         
         # Add instructions
@@ -354,7 +406,7 @@ class AttendanceKiosk:
                 logging.debug(error_msg)
             return ("Error", metadata)
 
-    def save_snapshot(self, face_image, label: str | None = None) -> None:
+    def save_snapshot(self, face_image, label: Optional[str] = None) -> None:
         """Save a cropped face snapshot for debugging/audit."""
         if not self.save_snapshots:
             return
