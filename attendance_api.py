@@ -150,6 +150,13 @@ async def get_students(db: Session = Depends(get_db)):
         ) for s in students
     ]
 
+# Get all courses
+@app.get("/api/courses")
+async def get_courses(db: Session = Depends(get_db)):
+    """Get all courses"""
+    courses = db.query(Course).filter(Course.is_active == True).all()
+    return courses
+
 # Create course
 @app.post("/api/courses")
 async def create_course(course: CourseCreate, db: Session = Depends(get_db)):
@@ -354,6 +361,69 @@ async def check_in_student(
             
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error processing face: {str(e)}")
+
+# Manual check-in endpoint
+class ManualCheckInRequest(BaseModel):
+    session_id: int
+    student_id: str  # Student ID string, not database ID
+    status: str = "present"  # present, late, absent
+    check_in_time: Optional[datetime] = None
+    notes: Optional[str] = None
+
+@app.post("/api/attendance/manual-check-in")
+async def manual_check_in(
+    request: ManualCheckInRequest,
+    db: Session = Depends(get_db)
+):
+    """Manually add attendance record"""
+    
+    # Get session
+    session = db.query(Session).filter(Session.id == request.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Get student by student_id
+    student = db.query(Student).filter(Student.student_id == request.student_id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    # Check if already checked in
+    existing_record = db.query(AttendanceRecord).filter(
+        AttendanceRecord.student_id == student.id,
+        AttendanceRecord.session_id == request.session_id
+    ).first()
+    
+    if existing_record:
+        raise HTTPException(status_code=400, detail="Student already checked in for this session")
+    
+    # Create attendance record
+    check_in_time = request.check_in_time if request.check_in_time else datetime.utcnow()
+    attendance_record = AttendanceRecord(
+        student_id=student.id,
+        session_id=request.session_id,
+        check_in_time=check_in_time,
+        status=request.status,
+        notes=request.notes
+    )
+    
+    db.add(attendance_record)
+    db.commit()
+    db.refresh(attendance_record)
+    
+    # Notify web dashboard via WebSocket
+    await manager.broadcast_to_session(request.session_id, {
+        "type": "attendance_update",
+        "student_name": student.name,
+        "student_id": student.student_id,
+        "check_in_time": attendance_record.check_in_time.isoformat(),
+        "status": attendance_record.status
+    })
+    
+    return {
+        "success": True,
+        "message": f"Manual entry added for {student.name}",
+        "attendance_id": attendance_record.id
+    }
 
 if __name__ == "__main__":
     import uvicorn
