@@ -21,9 +21,11 @@ from websocket_manager import ConnectionManager
 app = FastAPI(title="Face Recognition Attendance System", version="1.0.0")
 
 # CORS middleware
+# In production, replace "*" with your actual domain
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,10 +73,46 @@ class CheckInRequest(BaseModel):
     session_id: int
     face_image_base64: str
 
-# Create database tables on startup
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    try:
+        # Check which database is being used
+        use_mongodb = os.getenv("USE_MONGODB", "false").lower() == "true" or os.getenv("MONGODB_URL")
+        
+        if use_mongodb:
+            # Test MongoDB connection
+            from database_mongodb import get_mongodb_client
+            client = get_mongodb_client()
+            client.admin.command('ping')
+            return {"status": "healthy", "database": "mongodb", "connected": True}
+        else:
+            # Test SQL database connection
+            from database import engine
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return {"status": "healthy", "database": "sql", "connected": True}
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
+
+# Create database tables/indexes on startup
 @app.on_event("startup")
 async def startup_event():
-    create_tables()
+    # Check if using MongoDB
+    use_mongodb = os.getenv("USE_MONGODB", "false").lower() == "true" or os.getenv("MONGODB_URL")
+    
+    if use_mongodb:
+        # Initialize MongoDB indexes
+        try:
+            from database_mongodb import create_indexes
+            create_indexes()
+        except ImportError:
+            pass
+    else:
+        # Create SQL tables
+        create_tables()
 
 # Student enrollment endpoint
 @app.post("/api/students/enroll", response_model=StudentResponse)

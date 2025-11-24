@@ -1153,7 +1153,8 @@
     </div>
 
     <script>
-        const API_BASE_URL = 'http://localhost:8000';
+        // Auto-detect API URL (works in both dev and production)
+        const API_BASE_URL = window.location.origin;
         let currentSessionId = null;
         let websocket = null;
         let mediaStream = null;
@@ -1171,7 +1172,8 @@
             loadStudents();
             loadCourses();
             setupKioskControls();
-            updateConnectionStatus();
+            // Initialize connection status - show API status, not WebSocket
+            updateConnectionStatus('⚪ No session selected', 'info');
             updateBreadcrumbs('dashboard');
             loadKioskSettings();
         });
@@ -1194,9 +1196,12 @@
         function updateThemeIcon(theme) {
             const icon = theme === 'dark' ? '☀️' : '🌙';
             const text = theme === 'dark' ? 'Light Mode' : 'Dark Mode';
-            document.getElementById('theme-toggle-btn').textContent = icon;
-            document.getElementById('theme-icon').textContent = icon;
-            document.getElementById('theme-text').textContent = text;
+            const themeToggleBtn = document.getElementById('theme-toggle-btn');
+            const themeIcon = document.getElementById('theme-icon');
+            const themeText = document.getElementById('theme-text');
+            if (themeToggleBtn) themeToggleBtn.textContent = icon;
+            if (themeIcon) themeIcon.textContent = icon;
+            if (themeText) themeText.textContent = text;
         }
 
         // Sidebar Management
@@ -1350,14 +1355,16 @@
                 allSessions = await response.json();
                 
                 const select = document.getElementById('session-select');
-                select.innerHTML = '<option value="">Select a session</option>';
-                
-                allSessions.forEach(session => {
-                    const option = document.createElement('option');
-                    option.value = session.id;
-                    option.textContent = `${session.session_name} - ${session.course.course_name}`;
-                    select.appendChild(option);
-                });
+                if (select) {
+                    select.innerHTML = '<option value="">Select a session</option>';
+                    
+                    allSessions.forEach(session => {
+                        const option = document.createElement('option');
+                        option.value = session.id;
+                        option.textContent = `${session.session_name} - ${session.course.course_name}`;
+                        select.appendChild(option);
+                    });
+                }
             } catch (error) {
                 console.error('Error loading sessions:', error);
                 showError('Failed to load sessions');
@@ -1536,17 +1543,21 @@
         }
 
         // Handle session selection
-        document.getElementById('session-select').addEventListener('change', function() {
-            currentSessionId = this.value;
-            if (currentSessionId) {
-                loadAttendanceRecords();
-                updateSessionControls();
-                setupWebSocket();
-            } else {
-                clearAttendanceData();
-                teardownWebSocket();
-            }
-        });
+        const sessionSelect = document.getElementById('session-select');
+        if (sessionSelect) {
+            sessionSelect.addEventListener('change', function() {
+                currentSessionId = this.value ? parseInt(this.value) : null;
+                if (currentSessionId) {
+                    loadAttendanceRecords();
+                    updateSessionControls();
+                    setupWebSocket();
+                } else {
+                    clearAttendanceData();
+                    teardownWebSocket();
+                    updateConnectionStatus('⚪ No session selected', 'info');
+                }
+            });
+        }
 
         // Load attendance records for selected session
         async function loadAttendanceRecords() {
@@ -1927,9 +1938,15 @@
 
         function selectSession(sessionId) {
             currentSessionId = sessionId;
-            document.getElementById('session-select').value = sessionId;
+            const select = document.getElementById('session-select');
+            if (select) {
+                select.value = sessionId;
+            }
             switchTab('dashboard');
-            document.querySelector('.nav-tab').click();
+            const navTab = document.querySelector('.nav-tab');
+            if (navTab) {
+                navTab.click();
+            }
             loadAttendanceRecords();
             updateSessionControls();
             setupWebSocket();
@@ -1961,17 +1978,31 @@
 
         function setupWebSocket() {
             teardownWebSocket();
-            if (!currentSessionId) return;
+            if (!currentSessionId) {
+                updateConnectionStatus('⚪ No session selected', 'info');
+                return;
+            }
             
             const wsUrl = `ws://localhost:8000/ws/attendance/${currentSessionId}`;
             try {
                 websocket = new WebSocket(wsUrl);
                 updateConnectionStatus('Connecting...', 'warning');
                 
+                // Set a timeout to detect if connection fails
+                const connectionTimeout = setTimeout(() => {
+                    if (websocket && websocket.readyState === WebSocket.CONNECTING) {
+                        websocket.close();
+                        updateConnectionStatus('⚠️ Connection timeout', 'error');
+                    }
+                }, 5000); // 5 second timeout
+                
                 websocket.onopen = () => {
+                    clearTimeout(connectionTimeout);
                     wsReconnectAttempts = 0;
                     updateConnectionStatus('🟢 Connected', 'success');
-                    logEvent('Connected to live updates');
+                    if (typeof logEvent === 'function') {
+                        logEvent('Connected to live updates');
+                    }
                     showInfo('WebSocket connected - receiving live updates');
                 };
                 
@@ -1979,7 +2010,9 @@
                     try {
                         const msg = JSON.parse(event.data);
                         if (msg.type === 'attendance_update') {
-                            logEvent(`✅ Check-in: ${msg.student_name} (${msg.student_id})`);
+                            if (typeof logEvent === 'function') {
+                                logEvent(`✅ Check-in: ${msg.student_name} (${msg.student_id})`);
+                            }
                             loadAttendanceRecords();
                             // Show desktop notification if permission granted
                             showDesktopNotification(`${msg.student_name} checked in`, {
@@ -1993,19 +2026,25 @@
                 };
                 
                 websocket.onclose = (event) => {
-                    updateConnectionStatus('🔴 Disconnected', 'error');
-                    if (!event.wasClean && wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                        reconnectWebSocket();
+                    clearTimeout(connectionTimeout);
+                    if (!currentSessionId) {
+                        updateConnectionStatus('⚪ No session selected', 'info');
+                    } else {
+                        updateConnectionStatus('🔴 Disconnected', 'error');
+                        if (!event.wasClean && wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                            reconnectWebSocket();
+                        }
                     }
                 };
                 
                 websocket.onerror = (error) => {
+                    clearTimeout(connectionTimeout);
                     console.error('WebSocket error:', error);
-                    updateConnectionStatus('⚠️ Error', 'error');
+                    updateConnectionStatus('⚠️ Connection error', 'error');
                 };
             } catch (err) {
                 console.error('WebSocket error', err);
-                updateConnectionStatus('⚠️ Error', 'error');
+                updateConnectionStatus('⚠️ Connection error', 'error');
             }
         }
 
@@ -2034,6 +2073,10 @@
                 websocket = null;
             }
             wsReconnectAttempts = 0;
+            // Update status when tearing down if no session selected
+            if (!currentSessionId) {
+                updateConnectionStatus('⚪ No session selected', 'info');
+            }
         }
 
         function updateConnectionStatus(text, type = 'info') {
@@ -2069,8 +2112,14 @@
         }
 
         function setupKioskControls() {
-            document.getElementById('start-camera').addEventListener('click', startCamera);
-            document.getElementById('stop-camera').addEventListener('click', stopCamera);
+            const startCameraBtn = document.getElementById('start-camera');
+            const stopCameraBtn = document.getElementById('stop-camera');
+            if (startCameraBtn) {
+                startCameraBtn.addEventListener('click', startCamera);
+            }
+            if (stopCameraBtn) {
+                stopCameraBtn.addEventListener('click', stopCamera);
+            }
         }
 
         async function startCamera() {
@@ -2843,13 +2892,27 @@
             `).join('');
         }
 
-        function updateConnectionStatus() {
+        function checkApiConnection() {
+            // This function checks API connectivity, not WebSocket
+            // Only update if we're not already showing WebSocket status
+            if (!currentSessionId) {
+                updateConnectionStatus('⚪ No session selected', 'info');
+                return;
+            }
+            // If WebSocket is connected, don't override with API check
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                return;
+            }
+            // Otherwise check API connectivity
             fetch(`${API_BASE_URL}/api/sessions`)
                 .then(() => {
-                    updateConnectionStatus('🟢 Connected', 'success');
+                    // Only update if WebSocket is not connecting/connected
+                    if (!websocket || websocket.readyState === WebSocket.CLOSED) {
+                        updateConnectionStatus('🟡 API Connected (WebSocket offline)', 'warning');
+                    }
                 })
                 .catch(() => {
-                    updateConnectionStatus('🔴 Disconnected', 'error');
+                    updateConnectionStatus('🔴 API Disconnected', 'error');
                 });
         }
 
@@ -2998,7 +3061,7 @@
                             if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
                             if (captureInterval) clearInterval(captureInterval);
                         });
-                    </script>
+                    <\/script>
                 </body>
                 </html>
             `);
@@ -3009,6 +3072,7 @@
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
                 const select = document.getElementById(selectId);
+                if (!select) return;
                 select.innerHTML = '';
                 videoDevices.forEach((device, index) => {
                     const option = document.createElement('option');
@@ -3026,10 +3090,19 @@
             const saved = localStorage.getItem('kioskSettings');
             if (saved) {
                 kioskSettings = JSON.parse(saved);
-                document.getElementById('confidence-threshold').value = kioskSettings.confidenceThreshold * 100;
-                document.getElementById('confidence-threshold-display').textContent = (kioskSettings.confidenceThreshold * 100) + '%';
+                const confidenceThreshold = document.getElementById('confidence-threshold');
+                const confidenceDisplay = document.getElementById('confidence-threshold-display');
+                if (confidenceThreshold) {
+                    confidenceThreshold.value = kioskSettings.confidenceThreshold * 100;
+                }
+                if (confidenceDisplay) {
+                    confidenceDisplay.textContent = (kioskSettings.confidenceThreshold * 100) + '%';
+                }
             }
-            loadCameraDevices('camera-select');
+            const cameraSelect = document.getElementById('camera-select');
+            if (cameraSelect) {
+                loadCameraDevices('camera-select');
+            }
         }
 
         // Auto-refresh every 30 seconds
@@ -3037,9 +3110,8 @@
             if (currentSessionId) {
                 loadAttendanceRecords();
             }
-            updateConnectionStatus();
+            checkApiConnection();
         }, 30000);
     </script>
 </body>
-</html> 
 </html> 
