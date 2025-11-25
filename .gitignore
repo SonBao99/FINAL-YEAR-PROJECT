@@ -30,12 +30,12 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+attendance.db
 
 # Environment variables
 .env
 .env.local
 .env.*.local
-.vercel
 
 # IDE
 .vscode/
@@ -48,15 +48,13 @@ env/
 .DS_Store
 Thumbs.db
 
-# Project specific
-student_photos/
-kiosk_snapshots/
-images/
+# Project specific - Sensitive data
+assets/photos/
+assets/images/
 *.jpg
 *.jpeg
 *.png
-attendance.db
-attendance.db-journal
+kiosk_snapshots/
 
 # Logs
 *.log
@@ -69,4 +67,4 @@ htmlcov/
 # Deployment
 .railway/
 .render/
-
+.vercel

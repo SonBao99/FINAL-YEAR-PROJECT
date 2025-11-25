@@ -1,0 +1,31 @@
+📁 NEW PROJECT STRUCTURE
+========================
+
+✅ src/                    - All source code
+   ├── api/                - API & kiosk app
+   ├── database/           - Database adapters
+   ├── models/              - Data models
+   └── scripts/             - Utility scripts
+
+✅ config/                 - Configuration files
+   ├── requirements.txt
+   ├── Dockerfile
+   ├── Procfile
+   └── render.yaml
+
+✅ docs/                   - Documentation
+   ├── demo/               - Demo guides
+   ├── deployment/         - Deployment guides
+   └── technical/          - Technical docs
+
+✅ tests/                  - Test files
+✅ tools/                  - Utility tools
+✅ assets/                 - Static assets
+
+📝 Updated Files:
+- All imports updated to use src.* paths
+- Configuration files updated
+- Asset paths updated (student_photos → assets/photos)
+
+🚀 To Run:
+python3 -m uvicorn src.api.attendance_api:app --reload --port 8000
