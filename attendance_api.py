@@ -17,6 +17,10 @@ import os
 from pathlib import Path
 import asyncio
 from websocket_manager import ConnectionManager
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(title="Face Recognition Attendance System", version="1.0.0")
 
