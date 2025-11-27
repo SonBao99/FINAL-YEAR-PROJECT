@@ -1,0 +1,12 @@
+# Railway Nixpacks configuration (optional)
+# Railway will auto-detect Python, but this provides explicit config
+
+[phases.setup]
+nixPkgs = ["python310", "pip"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "python start_server.py"
+
