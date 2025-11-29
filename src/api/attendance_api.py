@@ -16,6 +16,8 @@ import base64
 import os
 from pathlib import Path
 import asyncio
+import subprocess
+import sys
 from src.api.websocket_manager import ConnectionManager
 
 app = FastAPI(title="Face Recognition Attendance System", version="1.0.0")
@@ -33,6 +35,9 @@ app.add_middleware(
 
 # WebSocket manager for real-time updates
 manager = ConnectionManager()
+
+# Kiosk process management
+kiosk_process: Optional[subprocess.Popen] = None
 
 # Pydantic models for API
 class StudentCreate(BaseModel):
@@ -308,6 +313,42 @@ async def websocket_endpoint(websocket: WebSocket, session_id: int):
     except WebSocketDisconnect:
         manager.disconnect(websocket, session_id)
 
+# Video stream WebSocket endpoint for kiosk to send frames
+@app.websocket("/ws/video-stream")
+async def video_stream_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for kiosk to send video frames"""
+    await manager.connect_video_stream_source(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Kiosk sends frames, we broadcast to all connected web clients
+            try:
+                message = json.loads(data)
+                if message.get("type") == "video_frame":
+                    # Broadcast to all video stream clients (web dashboard viewers)
+                    await manager.broadcast_video_frame(message.get("frame"))
+                elif message.get("type") == "stats_update":
+                    # Broadcast stats update to all video stream clients
+                    await manager.broadcast_stats_update(message.get("stats"))
+            except json.JSONDecodeError:
+                pass
+    except WebSocketDisconnect:
+        manager.disconnect_video_stream_source(websocket)
+
+# WebSocket endpoint for web clients to receive video stream
+@app.websocket("/ws/video-viewer")
+async def video_viewer_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for web dashboard to receive live video feed from kiosk"""
+    await manager.connect_video_viewer(websocket)
+    try:
+        # Send a message to indicate connection
+        await websocket.send_text(json.dumps({"type": "connected", "message": "Connected to video stream"}))
+        # Keep connection alive - frames will be broadcast by broadcast_video_frame
+        while True:
+            await websocket.receive_text()  # Keep connection alive
+    except WebSocketDisconnect:
+        manager.disconnect_video_viewer(websocket)
+
 # Face recognition endpoint for kiosk
 @app.post("/api/attendance/check-in")
 async def check_in_student(
@@ -364,7 +405,13 @@ async def check_in_student(
             ).first()
             
             if existing_record:
-                return {"success": False, "message": "Already checked in"}
+                return {
+                    "success": False, 
+                    "message": "Already checked in",
+                    "student_name": best_match.name,
+                    "student_id": best_match.student_id,
+                    "confidence": existing_record.confidence_score or 0.0
+                }
             
             # Create attendance record
             attendance_record = AttendanceRecord(
@@ -462,6 +509,79 @@ async def manual_check_in(
         "message": f"Manual entry added for {student.name}",
         "attendance_id": attendance_record.id
     }
+
+# Kiosk control endpoints
+@app.post("/api/kiosk/start")
+async def start_kiosk():
+    """Start the kiosk application"""
+    global kiosk_process
+    
+    if kiosk_process is not None and kiosk_process.poll() is None:
+        return {"success": False, "message": "Kiosk is already running"}
+    
+    try:
+        # Get the path to kiosk_app.py
+        current_dir = Path(__file__).parent
+        kiosk_script = current_dir / "kiosk_app.py"
+        
+        if not kiosk_script.exists():
+            raise HTTPException(status_code=404, detail="Kiosk script not found")
+        
+        # Determine Python executable
+        python_exe = sys.executable
+        
+        # Start the kiosk process
+        kiosk_process = subprocess.Popen(
+            [python_exe, str(kiosk_script)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(current_dir)
+        )
+        
+        return {
+            "success": True,
+            "message": "Kiosk started successfully",
+            "pid": kiosk_process.pid
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start kiosk: {str(e)}")
+
+@app.post("/api/kiosk/stop")
+async def stop_kiosk():
+    """Stop the kiosk application"""
+    global kiosk_process
+    
+    if kiosk_process is None:
+        return {"success": False, "message": "Kiosk is not running"}
+    
+    try:
+        if kiosk_process.poll() is None:  # Process is still running
+            kiosk_process.terminate()
+            # Wait up to 5 seconds for graceful shutdown
+            try:
+                kiosk_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                kiosk_process.kill()  # Force kill if it doesn't terminate
+        
+        kiosk_process = None
+        return {"success": True, "message": "Kiosk stopped successfully"}
+    except Exception as e:
+        kiosk_process = None
+        raise HTTPException(status_code=500, detail=f"Failed to stop kiosk: {str(e)}")
+
+@app.get("/api/kiosk/status")
+async def get_kiosk_status():
+    """Get the current status of the kiosk"""
+    global kiosk_process
+    
+    if kiosk_process is None:
+        return {"running": False, "message": "Kiosk is not running"}
+    
+    if kiosk_process.poll() is None:
+        return {"running": True, "pid": kiosk_process.pid, "message": "Kiosk is running"}
+    else:
+        kiosk_process = None
+        return {"running": False, "message": "Kiosk process has terminated"}
 
 if __name__ == "__main__":
     import uvicorn
