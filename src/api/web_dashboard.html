@@ -739,7 +739,18 @@
                 <button class="btn btn-danger" onclick="stopSession()" id="stop-btn" disabled><i class="fas fa-stop"></i> Stop</button>
             </div>
 
-            <div class="stats">
+            <!-- In-Progress Sessions List -->
+            <div class="in-progress-sessions" style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #28a745;">
+                <h3 style="margin: 0 0 15px 0; color: #28a745; display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-circle" style="color: #28a745; font-size: 0.7em;"></i>
+                    In-Progress Sessions
+                </h3>
+                <div id="in-progress-sessions-list" style="display: grid; gap: 10px;">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+
+            <div class="stats" id="stats-section" style="display: none;">
                 <div class="stat-card">
                     <div class="stat-number" id="total-students">0</div>
                     <div class="stat-label">Total Students</div>
@@ -758,27 +769,131 @@
                 </div>
             </div>
 
-            <div class="attendance-list">
+            <!-- Kiosk Live Feed Section (Moved Up) -->
+            <div class="kiosk" id="kiosk-section" style="display: none;">
+                <div class="panel" style="flex: 1;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3>📷 Kiosk Live Feed</h3>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <span id="kiosk-stream-status" style="padding: 5px 10px; border-radius: 4px; font-size: 0.85em; background: #f0f0f0; color: #666;">
+                                <i class="fas fa-circle" style="color: #dc3545; font-size: 0.7em;"></i> Connecting...
+                            </span>
+                            <button id="kiosk-start-btn" class="btn btn-success btn-sm" onclick="startKiosk()" style="padding: 6px 12px; font-size: 0.85em;">
+                                <i class="fas fa-play"></i> Start Kiosk
+                            </button>
+                            <button id="kiosk-stop-btn" class="btn btn-danger btn-sm" onclick="stopKiosk()" style="padding: 6px 12px; font-size: 0.85em; display: none;">
+                                <i class="fas fa-stop"></i> Stop Kiosk
+                            </button>
+                        </div>
+                    </div>
+                    <div style="position: relative; background: #000; border-radius: 8px; overflow: hidden; min-height: 400px; display: flex; align-items: center; justify-content: center;">
+                        <img id="kiosk-video-stream" src="" alt="Kiosk Live Feed" style="width: 100%; height: auto; display: none; max-height: 600px;">
+                        <div id="kiosk-stream-placeholder" style="color: #666; text-align: center;">
+                            <i class="fas fa-video-slash" style="font-size: 3em; margin-bottom: 10px; display: block;"></i>
+                            <div>Waiting for kiosk connection...</div>
+                        </div>
+                    </div>
+                    <div id="kiosk-status" style="margin-top: 8px; color: #666; text-align: center;">Kiosk offline</div>
+                </div>
+                <div class="panel" style="flex: 1;">
+                    <h3>📊 Real-Time Stats</h3>
+                    <div id="kiosk-stats" style="font-size: 0.9em;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                            <div style="padding: 10px; background: #f8f9fa; border-radius: 6px;">
+                                <div style="font-weight: 600; color: #495057; margin-bottom: 5px;">Session</div>
+                                <div id="stats-session" style="color: #6c757d;">-</div>
+                            </div>
+                            <div style="padding: 10px; background: #f8f9fa; border-radius: 6px;">
+                                <div style="font-weight: 600; color: #495057; margin-bottom: 5px;">Status</div>
+                                <div id="stats-status" style="color: #6c757d;">-</div>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                            <div style="padding: 10px; background: #e7f3ff; border-radius: 6px;">
+                                <div style="font-weight: 600; color: #0056b3; margin-bottom: 5px;">Faces Detected</div>
+                                <div id="stats-faces-detected" style="font-size: 1.2em; font-weight: 600; color: #0056b3;">0</div>
+                            </div>
+                            <div style="padding: 10px; background: #e7f3ff; border-radius: 6px;">
+                                <div style="font-weight: 600; color: #0056b3; margin-bottom: 5px;">Current Faces</div>
+                                <div id="stats-current-faces" style="font-size: 1.2em; font-weight: 600; color: #0056b3;">0</div>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                            <div style="padding: 10px; background: #d4edda; border-radius: 6px;">
+                                <div style="font-weight: 600; color: #155724; margin-bottom: 5px;">Recognition Success</div>
+                                <div id="stats-recognition-success" style="font-size: 1.2em; font-weight: 600; color: #155724;">0</div>
+                            </div>
+                            <div style="padding: 10px; background: #f8d7da; border-radius: 6px;">
+                                <div style="font-weight: 600; color: #721c24; margin-bottom: 5px;">Recognition Failed</div>
+                                <div id="stats-recognition-failed" style="font-size: 1.2em; font-weight: 600; color: #721c24;">0</div>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                            <div style="padding: 10px; background: #fff3cd; border-radius: 6px;">
+                                <div style="font-weight: 600; color: #856404; margin-bottom: 5px;">Total Attempts</div>
+                                <div id="stats-recognition-attempts" style="font-size: 1.2em; font-weight: 600; color: #856404;">0</div>
+                            </div>
+                            <div style="padding: 10px; background: #d1ecf1; border-radius: 6px;">
+                                <div style="font-weight: 600; color: #0c5460; margin-bottom: 5px;">Success Rate</div>
+                                <div id="stats-success-rate" style="font-size: 1.2em; font-weight: 600; color: #0c5460;">0%</div>
+                            </div>
+                        </div>
+                        
+                        <div style="padding: 10px; background: #f8f9fa; border-radius: 6px; margin-bottom: 15px;">
+                            <div style="font-weight: 600; color: #495057; margin-bottom: 8px;">Liveness Detection</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                                <div>
+                                    <div style="font-size: 0.85em; color: #6c757d;">Total Checks</div>
+                                    <div id="stats-liveness-checks" style="font-weight: 600; color: #495057;">0</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85em; color: #6c757d;">Live</div>
+                                    <div id="stats-liveness-live" style="font-weight: 600; color: #28a745;">0</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85em; color: #6c757d;">Fake</div>
+                                    <div id="stats-liveness-fake" style="font-weight: 600; color: #dc3545;">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="padding: 10px; background: #f8f9fa; border-radius: 6px;">
+                            <div style="font-weight: 600; color: #495057; margin-bottom: 5px;">System Info</div>
+                            <div style="font-size: 0.85em; color: #6c757d;">
+                                <div>Total Frames: <span id="stats-total-frames" style="font-weight: 600; color: #495057;">0</span></div>
+                                <div style="margin-top: 5px;">Last Update: <span id="stats-last-update" style="font-weight: 600; color: #495057;">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Attendance Records Section (Redesigned) -->
+            <div class="attendance-list" id="attendance-list-section" style="margin-top: 30px; display: none;">
                 <div class="list-header">
-                    <h3>Attendance Records</h3>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <input type="text" class="search-box" id="attendance-search" placeholder="Search students..." onkeyup="filterAttendance()">
+                    <h3>📋 Attendance Records</h3>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <input type="text" class="search-box" id="attendance-search" placeholder="🔍 Search students..." onkeyup="filterAttendance()" style="flex: 1; min-width: 200px;">
                         <select class="search-box" id="attendance-sort" onchange="sortAttendance()" style="width: auto;">
                             <option value="name">Sort by Name</option>
                             <option value="time">Sort by Time</option>
                             <option value="status">Sort by Status</option>
                         </select>
-                        <button class="btn btn-primary" onclick="exportAttendanceCSV()"><i class="fas fa-download"></i> Export CSV</button>
-                        <button class="btn btn-primary" onclick="exportAttendanceExcel()"><i class="fas fa-file-excel"></i> Export Excel</button>
                         <button class="btn btn-success" onclick="openManualEntryModal()"><i class="fas fa-plus"></i> Manual Entry</button>
+                        <button class="btn btn-primary" onclick="exportAttendanceCSV()"><i class="fas fa-download"></i> CSV</button>
+                        <button class="btn btn-primary" onclick="exportAttendanceExcel()"><i class="fas fa-file-excel"></i> Excel</button>
                     </div>
                 </div>
-                <div id="attendance-records">
-                    <div class="loading">Select a session to view attendance</div>
+                <div id="attendance-records" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; margin-top: 20px;">
+                    <div class="loading" style="grid-column: 1 / -1;">Select a session to view attendance</div>
                 </div>
             </div>
 
-            <div style="margin-top: 30px;">
+            <!-- Attendance Analytics Section (Moved Down) -->
+            <div id="attendance-analytics-section" style="margin-top: 30px; display: none;">
                 <h3>📈 Attendance Analytics</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
                     <div class="panel">
@@ -801,36 +916,6 @@
                             <canvas id="session-bar-chart"></canvas>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <div class="kiosk">
-                <div class="panel">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <h3>📷 Webcam Attendance Kiosk</h3>
-                        <div>
-                            <button class="btn btn-secondary btn-sm" onclick="openKioskSettings()"><i class="fas fa-cog"></i> Settings</button>
-                            <button class="btn btn-primary btn-sm" onclick="enterKioskMode()"><i class="fas fa-desktop"></i> Full Screen</button>
-                        </div>
-                    </div>
-                    <video id="video" autoplay playsinline muted></video>
-                    <canvas id="canvas" style="display:none"></canvas>
-                    <div class="kiosk-controls">
-                        <button class="btn btn-primary" id="start-camera"><i class="fas fa-video"></i> Start Camera</button>
-                        <button class="btn btn-secondary" id="stop-camera" disabled><i class="fas fa-video-slash"></i> Stop Camera</button>
-                        <select id="camera-select" class="search-box" style="width: auto; margin-left: 10px;">
-                            <option value="0">Default Camera</option>
-                        </select>
-                    </div>
-                    <div id="kiosk-status" style="margin-top:8px;color:#666">Camera idle</div>
-                    <div style="margin-top: 10px; font-size: 0.9em; color: var(--text-secondary);">
-                        <div>Confidence Threshold: <span id="confidence-threshold-display">60%</span></div>
-                        <input type="range" id="confidence-threshold" min="0" max="100" value="60" onchange="updateConfidenceThreshold(this.value)" style="width: 100%;">
-                    </div>
-                </div>
-                <div class="panel">
-                    <h3>📋 Recent Events</h3>
-                    <div id="events" style="max-height: 300px; overflow-y: auto;"></div>
                 </div>
             </div>
         </div>
@@ -1154,6 +1239,7 @@
         </div>
     </div>
 
+
     <script>
         // Auto-detect API URL (works in both dev and production)
         const API_BASE_URL = window.location.origin;
@@ -1173,11 +1259,21 @@
             loadSessions();
             loadStudents();
             loadCourses();
-            setupKioskControls();
+            setupKioskControls(); // Sets up video stream connection
+            checkKioskStatus(); // Check kiosk status on page load
+            // Check kiosk status every 5 seconds
+            setInterval(checkKioskStatus, 5000);
             // Initialize connection status - show API status, not WebSocket
             updateConnectionStatus('No session selected', 'info');
             updateBreadcrumbs('dashboard');
-            loadKioskSettings();
+            loadInProgressSessions();
+            // Hide all sections except in-progress sessions on initial load
+            toggleDashboardSections(false);
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            disconnectVideoStream();
         });
 
         // Theme Management
@@ -1339,6 +1435,74 @@
             document.getElementById('create-course-modal').classList.add('active');
         }
 
+        // Kiosk control functions
+        async function startKiosk() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/kiosk/start`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    showSuccess('Kiosk started successfully!');
+                    updateKioskButtons(true);
+                    checkKioskStatus();
+                } else {
+                    showError(data.message || 'Failed to start kiosk');
+                }
+            } catch (error) {
+                showError('Failed to start kiosk: ' + error.message);
+            }
+        }
+
+        async function stopKiosk() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/kiosk/stop`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    showSuccess('Kiosk stopped successfully!');
+                    updateKioskButtons(false);
+                } else {
+                    showError(data.message || 'Failed to stop kiosk');
+                }
+            } catch (error) {
+                showError('Failed to stop kiosk: ' + error.message);
+            }
+        }
+
+        async function checkKioskStatus() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/kiosk/status`);
+                const data = await response.json();
+                
+                if (data.running) {
+                    updateKioskButtons(true);
+                } else {
+                    updateKioskButtons(false);
+                }
+            } catch (error) {
+                console.error('Failed to check kiosk status:', error);
+            }
+        }
+
+        function updateKioskButtons(isRunning) {
+            const startBtn = document.getElementById('kiosk-start-btn');
+            const stopBtn = document.getElementById('kiosk-stop-btn');
+            
+            if (isRunning) {
+                if (startBtn) startBtn.style.display = 'none';
+                if (stopBtn) stopBtn.style.display = 'inline-block';
+            } else {
+                if (startBtn) startBtn.style.display = 'inline-block';
+                if (stopBtn) stopBtn.style.display = 'none';
+            }
+        }
+
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('active');
         }
@@ -1367,10 +1531,68 @@
                         select.appendChild(option);
                     });
                 }
+                
+                // Always update in-progress sessions list after loading sessions
+                loadInProgressSessions();
+                
+                return allSessions; // Return for use in async/await
             } catch (error) {
                 console.error('Error loading sessions:', error);
                 showError('Failed to load sessions');
+                return [];
             }
+        }
+
+        // Load and display in-progress sessions
+        function loadInProgressSessions() {
+            const container = document.getElementById('in-progress-sessions-list');
+            if (!container) return;
+            
+            // Filter active sessions
+            const activeSessions = allSessions ? allSessions.filter(session => session.is_active === true) : [];
+            
+            if (activeSessions.length === 0) {
+                container.innerHTML = '<div style="color: #666; font-style: italic; padding: 10px;">No sessions in progress</div>';
+                return;
+            }
+            
+            container.innerHTML = activeSessions.map(session => {
+                const startTime = session.actual_start ? new Date(session.actual_start) : new Date(session.scheduled_start);
+                const now = new Date();
+                const duration = Math.floor((now - startTime) / 1000 / 60); // Duration in minutes
+                const durationText = duration < 60 ? `${duration}m` : `${Math.floor(duration / 60)}h ${duration % 60}m`;
+                
+                return `
+                    <div class="in-progress-session-card" 
+                         onclick="selectSession(${session.id})" 
+                         style="padding: 12px; background: white; border-radius: 6px; border: 1px solid #dee2e6; cursor: pointer; transition: all 0.2s;"
+                         onmouseover="this.style.borderColor='#28a745'; this.style.boxShadow='0 2px 4px rgba(40,167,69,0.2)'"
+                         onmouseout="this.style.borderColor='#dee2e6'; this.style.boxShadow='none'">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; color: #212529; margin-bottom: 5px;">
+                                    ${session.session_name}
+                                </div>
+                                <div style="font-size: 0.9em; color: #6c757d; margin-bottom: 3px;">
+                                    <i class="fas fa-book"></i> ${session.course.course_name}
+                                </div>
+                                <div style="font-size: 0.85em; color: #6c757d;">
+                                    <i class="fas fa-clock"></i> Started ${durationText} ago
+                                    ${session.room_location ? ` | <i class="fas fa-map-marker-alt"></i> ${session.room_location}` : ''}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 5px; align-items: center;">
+                                <span class="status-badge status-active" style="font-size: 0.85em;">Active</span>
+                                <button class="btn btn-danger btn-sm" 
+                                        onclick="event.stopPropagation(); stopSessionById(${session.id})" 
+                                        style="padding: 4px 8px; font-size: 0.8em;">
+                                    <i class="fas fa-stop"></i> Stop
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         // Load sessions list for Sessions tab
@@ -1544,16 +1766,35 @@
             `).join('');
         }
 
+        // Toggle visibility of dashboard sections based on session selection
+        function toggleDashboardSections(hasSession) {
+            const sectionsToToggle = [
+                'stats-section',
+                'kiosk-section',
+                'attendance-list-section',
+                'attendance-analytics-section'
+            ];
+            
+            sectionsToToggle.forEach(sectionId => {
+                const section = document.getElementById(sectionId);
+                if (section) {
+                    section.style.display = hasSession ? '' : 'none';
+                }
+            });
+        }
+
         // Handle session selection
         const sessionSelect = document.getElementById('session-select');
         if (sessionSelect) {
             sessionSelect.addEventListener('change', function() {
                 currentSessionId = this.value ? parseInt(this.value) : null;
                 if (currentSessionId) {
+                    toggleDashboardSections(true);
                     loadAttendanceRecords();
                     updateSessionControls();
                     setupWebSocket();
                 } else {
+                    toggleDashboardSections(false);
                     clearAttendanceData();
                     teardownWebSocket();
                     updateConnectionStatus('No session selected', 'info');
@@ -1587,27 +1828,50 @@
             const container = document.getElementById('attendance-records');
             
             if (records.length === 0) {
-                container.innerHTML = '<div class="loading">No attendance records yet</div>';
+                container.innerHTML = '<div class="loading" style="grid-column: 1 / -1;">No attendance records yet</div>';
                 return;
             }
 
-            container.innerHTML = records.map((record, index) => `
-                <div class="attendance-item" data-index="${index}">
-                    <div class="student-info">
-                        <div class="student-name">${record.student.name}</div>
-                        <div class="student-id">ID: ${record.student.student_id}</div>
-                    </div>
-                    <div class="attendance-time">
-                        ${new Date(record.check_in_time).toLocaleString()}
-                    </div>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <div class="status-badge status-${record.status}">
-                            ${record.status.toUpperCase()}
+            container.innerHTML = records.map((record, index) => {
+                const statusColors = {
+                    present: { bg: '#d4edda', border: '#28a745', text: '#155724', icon: 'fa-check-circle' },
+                    late: { bg: '#fff3cd', border: '#ffc107', text: '#856404', icon: 'fa-clock' },
+                    absent: { bg: '#f8d7da', border: '#dc3545', text: '#721c24', icon: 'fa-times-circle' }
+                };
+                const statusStyle = statusColors[record.status] || statusColors.present;
+                const checkInTime = new Date(record.check_in_time);
+                const timeStr = checkInTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                const dateStr = checkInTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                
+                return `
+                    <div class="attendance-item" data-index="${index}" style="background: white; border: 2px solid ${statusStyle.border}; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'" onmouseout="this.style.transform=''; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'">
+                        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
+                            <div style="width: 50px; height: 50px; border-radius: 50%; background: ${statusStyle.bg}; display: flex; align-items: center; justify-content: center; font-size: 1.5em; color: ${statusStyle.border};">
+                                <i class="fas ${statusStyle.icon}"></i>
+                            </div>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; font-size: 1.1em; color: #333; margin-bottom: 4px;">${record.student.name}</div>
+                                <div style="font-size: 0.85em; color: #666;">ID: ${record.student.student_id}</div>
+                            </div>
                         </div>
-                        ${record.confidence_score ? `<span style="font-size: 0.85em; color: #666;">Conf: ${(record.confidence_score * 100).toFixed(0)}%</span>` : ''}
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 15px; border-top: 1px solid #eee;">
+                            <div>
+                                <div style="font-size: 0.75em; color: #999; text-transform: uppercase; margin-bottom: 4px;">Check-in Time</div>
+                                <div style="font-weight: 600; color: #333;">${timeStr}</div>
+                                <div style="font-size: 0.85em; color: #666;">${dateStr}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div class="status-badge status-${record.status}" style="padding: 6px 12px; border-radius: 20px; font-size: 0.85em; font-weight: 600; margin-bottom: 6px;">
+                                    ${record.status.toUpperCase()}
+                                </div>
+                                ${record.confidence_score ? `<div style="font-size: 0.75em; color: #666;">
+                                    <i class="fas fa-shield-alt"></i> ${(record.confidence_score * 100).toFixed(0)}%
+                                </div>` : ''}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
 
             // Update charts
             updateAttendanceCharts(records);
@@ -1714,7 +1978,10 @@
 
         // Clear attendance data
         function clearAttendanceData() {
-            document.getElementById('attendance-records').innerHTML = '<div class="loading">Select a session to view attendance</div>';
+            const recordsContainer = document.getElementById('attendance-records');
+            if (recordsContainer) {
+                recordsContainer.innerHTML = '<div class="loading" style="grid-column: 1 / -1;">Select a session to view attendance</div>';
+            }
             document.getElementById('total-students').textContent = '0';
             document.getElementById('present-count').textContent = '0';
             document.getElementById('absent-count').textContent = '0';
@@ -1886,7 +2153,10 @@
 
         // Start session
         async function startSession() {
-            if (!currentSessionId) return;
+            if (!currentSessionId) {
+                showError('Please select a session first before starting');
+                return;
+            }
             await startSessionById(currentSessionId);
         }
 
@@ -1898,7 +2168,11 @@
                 
                 if (response.ok) {
                     showSuccess('Session started successfully');
-                    loadSessions();
+                    // Small delay to ensure API has processed the start request
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    // Reload sessions first to get updated status, then update in-progress list
+                    await loadSessions();
+                    // loadInProgressSessions() is already called inside loadSessions()
                     if (document.getElementById('sessions-tab').classList.contains('active')) {
                         loadSessionsList();
                     }
@@ -1925,7 +2199,9 @@
                 
                 if (response.ok) {
                     showSuccess('Session stopped successfully');
-                    loadSessions();
+                    // Reload sessions first to get updated status, then update in-progress list
+                    await loadSessions();
+                    // loadInProgressSessions() is already called inside loadSessions()
                     if (document.getElementById('sessions-tab').classList.contains('active')) {
                         loadSessionsList();
                     }
@@ -1944,6 +2220,7 @@
             if (select) {
                 select.value = sessionId;
             }
+            toggleDashboardSections(true);
             switchTab('dashboard');
             const navTab = document.querySelector('.nav-tab');
             if (navTab) {
@@ -2132,16 +2409,242 @@
             Notification.requestPermission();
         }
 
+        // Video stream WebSocket for kiosk live feed
+        let videoStreamWebSocket = null;
+        let videoStreamReconnectAttempts = 0;
+        const MAX_VIDEO_RECONNECT_ATTEMPTS = 10;
+        let kioskDataTimeout = null;
+        let lastKioskDataTime = null;
+        const KIOSK_DATA_TIMEOUT_MS = 5000; // 5 seconds without data = offline
+
         function setupKioskControls() {
-            const startCameraBtn = document.getElementById('start-camera');
-            const stopCameraBtn = document.getElementById('stop-camera');
-            if (startCameraBtn) {
-                startCameraBtn.addEventListener('click', startCamera);
+            connectVideoStream();
+        }
+
+        function connectVideoStream() {
+            if (videoStreamWebSocket && videoStreamWebSocket.readyState === WebSocket.OPEN) {
+                return; // Already connected
             }
-            if (stopCameraBtn) {
-                stopCameraBtn.addEventListener('click', stopCamera);
+
+            const wsUrl = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://') + '/ws/video-viewer';
+            
+            try {
+                videoStreamWebSocket = new WebSocket(wsUrl);
+                
+                videoStreamWebSocket.onopen = () => {
+                    videoStreamReconnectAttempts = 0;
+                    updateKioskStreamStatus('Waiting for kiosk...', 'warning');
+                    document.getElementById('kiosk-status').textContent = 'Connected to server - Waiting for kiosk';
+                    document.getElementById('kiosk-status').style.color = '#ffc107';
+                    document.getElementById('kiosk-stream-placeholder').style.display = 'block';
+                    resetKioskStats();
+                    // Start timeout check - if no data received within timeout, mark as offline
+                    startKioskDataTimeout();
+                };
+                
+                videoStreamWebSocket.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        if (message.type === 'video_frame' && message.frame) {
+                            // Received video frame - kiosk is active
+                            markKioskAsOnline();
+                            const img = document.getElementById('kiosk-video-stream');
+                            img.src = 'data:image/jpeg;base64,' + message.frame;
+                            img.style.display = 'block';
+                            document.getElementById('kiosk-stream-placeholder').style.display = 'none';
+                        } else if (message.type === 'stats_update' && message.stats) {
+                            // Received stats - kiosk is active
+                            markKioskAsOnline();
+                            updateKioskStats(message.stats);
+                        } else if (message.type === 'connected') {
+                            // Server confirms connection, but kiosk might not be active yet
+                            updateKioskStreamStatus('Waiting for kiosk...', 'warning');
+                        }
+                    } catch (e) {
+                        console.warn('Video stream message error:', e);
+                    }
+                };
+                
+                videoStreamWebSocket.onerror = (error) => {
+                    console.error('Video stream error:', error);
+                    updateKioskStreamStatus('Connection error', 'error');
+                    markKioskAsOffline();
+                };
+                
+                videoStreamWebSocket.onclose = (event) => {
+                    clearKioskDataTimeout();
+                    updateKioskStreamStatus('Disconnected', 'error');
+                    markKioskAsOffline();
+                    
+                    const wasCleanClose = event.code === 1000;
+                    const reconnectDelay = wasCleanClose ? 5000 : 2000;
+                    
+                    if (videoStreamReconnectAttempts < MAX_VIDEO_RECONNECT_ATTEMPTS) {
+                        videoStreamReconnectAttempts++;
+                        const delay = Math.min(reconnectDelay * Math.pow(2, videoStreamReconnectAttempts - 1), 30000);
+                        setTimeout(() => {
+                            console.log(`Reconnecting video stream (attempt ${videoStreamReconnectAttempts}/${MAX_VIDEO_RECONNECT_ATTEMPTS})...`);
+                            connectVideoStream();
+                        }, delay);
+                    } else {
+                        updateKioskStreamStatus('Connection failed', 'error');
+                    }
+                };
+            } catch (error) {
+                console.error('Failed to connect video stream:', error);
+                updateKioskStreamStatus('Connection failed', 'error');
+                markKioskAsOffline();
             }
         }
+
+        function markKioskAsOnline() {
+            lastKioskDataTime = Date.now();
+            updateKioskStreamStatus('Kiosk online', 'success');
+            document.getElementById('kiosk-status').textContent = 'Kiosk online - Live feed active';
+            document.getElementById('kiosk-status').style.color = '#28a745';
+            startKioskDataTimeout(); // Reset timeout
+        }
+
+        function markKioskAsOffline() {
+            document.getElementById('kiosk-status').textContent = 'Kiosk offline';
+            document.getElementById('kiosk-status').style.color = '#dc3545';
+            document.getElementById('kiosk-stream-placeholder').style.display = 'block';
+            document.getElementById('kiosk-video-stream').style.display = 'none';
+            resetKioskStats();
+        }
+
+        function startKioskDataTimeout() {
+            clearKioskDataTimeout();
+            kioskDataTimeout = setTimeout(() => {
+                // No data received within timeout - mark as offline
+                if (lastKioskDataTime === null || (Date.now() - lastKioskDataTime) > KIOSK_DATA_TIMEOUT_MS) {
+                    updateKioskStreamStatus('Kiosk offline', 'error');
+                    markKioskAsOffline();
+                }
+            }, KIOSK_DATA_TIMEOUT_MS);
+        }
+
+        function clearKioskDataTimeout() {
+            if (kioskDataTimeout) {
+                clearTimeout(kioskDataTimeout);
+                kioskDataTimeout = null;
+            }
+        }
+
+        function updateKioskStreamStatus(text, type) {
+            const statusEl = document.getElementById('kiosk-stream-status');
+            if (!statusEl) return;
+            
+            const colors = {
+                success: { bg: '#d4edda', color: '#155724', icon: '#28a745' },
+                error: { bg: '#f8d7da', color: '#721c24', icon: '#dc3545' },
+                warning: { bg: '#fff3cd', color: '#856404', icon: '#ffc107' },
+                info: { bg: '#d1ecf1', color: '#0c5460', icon: '#17a2b8' }
+            };
+            
+            const style = colors[type] || colors.info;
+            statusEl.style.background = style.bg;
+            statusEl.style.color = style.color;
+            statusEl.innerHTML = '<i class="fas fa-circle" style="color: ' + style.icon + '; font-size: 0.7em;"></i> ' + text;
+        }
+
+        function resetKioskStats() {
+            const defaultStats = {
+                session_name: 'No Session',
+                current_liveness_status: 'OFFLINE',
+                faces_detected: 0,
+                current_faces: 0,
+                recognition_success: 0,
+                recognition_failed: 0,
+                recognition_attempts: 0,
+                liveness_checks: 0,
+                liveness_live: 0,
+                liveness_fake: 0,
+                total_frames: 0,
+                last_update: Date.now() / 1000
+            };
+            updateKioskStats(defaultStats);
+        }
+
+        function updateKioskStats(stats) {
+            const sessionEl = document.getElementById('stats-session');
+            if (sessionEl) {
+                sessionEl.textContent = stats.session_name || 'No Session';
+            }
+            
+            const statusEl = document.getElementById('stats-status');
+            if (statusEl) {
+                const statusText = stats.current_liveness_status || 'CHECKING';
+                statusEl.textContent = statusText;
+                if (statusText === 'LIVE') {
+                    statusEl.style.color = '#28a745';
+                } else if (statusText === 'FAKE') {
+                    statusEl.style.color = '#dc3545';
+                } else {
+                    statusEl.style.color = '#ffc107';
+                }
+            }
+            
+            const facesDetectedEl = document.getElementById('stats-faces-detected');
+            if (facesDetectedEl) {
+                facesDetectedEl.textContent = stats.faces_detected || 0;
+            }
+            
+            const currentFacesEl = document.getElementById('stats-current-faces');
+            if (currentFacesEl) {
+                currentFacesEl.textContent = stats.current_faces || 0;
+            }
+            
+            const successEl = document.getElementById('stats-recognition-success');
+            if (successEl) {
+                successEl.textContent = stats.recognition_success || 0;
+            }
+            
+            const failedEl = document.getElementById('stats-recognition-failed');
+            if (failedEl) {
+                failedEl.textContent = stats.recognition_failed || 0;
+            }
+            
+            const attemptsEl = document.getElementById('stats-recognition-attempts');
+            if (attemptsEl) {
+                attemptsEl.textContent = stats.recognition_attempts || 0;
+            }
+            
+            const successRateEl = document.getElementById('stats-success-rate');
+            if (successRateEl) {
+                const attempts = stats.recognition_attempts || 0;
+                const success = stats.recognition_success || 0;
+                const successRate = attempts > 0 ? ((success / attempts) * 100).toFixed(1) : 0;
+                successRateEl.textContent = successRate + '%';
+            }
+            
+            const livenessChecksEl = document.getElementById('stats-liveness-checks');
+            if (livenessChecksEl) {
+                livenessChecksEl.textContent = stats.liveness_checks || 0;
+            }
+            
+            const livenessLiveEl = document.getElementById('stats-liveness-live');
+            if (livenessLiveEl) {
+                livenessLiveEl.textContent = stats.liveness_live || 0;
+            }
+            
+            const livenessFakeEl = document.getElementById('stats-liveness-fake');
+            if (livenessFakeEl) {
+                livenessFakeEl.textContent = stats.liveness_fake || 0;
+            }
+            
+            const totalFramesEl = document.getElementById('stats-total-frames');
+            if (totalFramesEl) {
+                totalFramesEl.textContent = stats.total_frames || 0;
+            }
+            
+            const lastUpdateEl = document.getElementById('stats-last-update');
+            if (lastUpdateEl && stats.last_update) {
+                const updateTime = new Date(stats.last_update * 1000);
+                lastUpdateEl.textContent = updateTime.toLocaleTimeString();
+            }
+        }
+
 
         async function startCamera() {
             if (!currentSessionId) {
@@ -2149,20 +2652,21 @@
                 return;
             }
             try {
-                const cameraId = parseInt(document.getElementById('camera-select').value) || 0;
+                const cameraSelect = document.getElementById('camera-select');
+                const cameraIndex = parseInt(cameraSelect.value) || 0;
                 const constraints = {
                     video: {
                         width: { ideal: 1280 },
                         height: { ideal: 720 },
-                        deviceId: cameraId ? { exact: cameraId } : undefined
+                        deviceId: cameraIndex ? { exact: cameraIndex } : undefined
                     }
                 };
                 
                 mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
                 const video = document.getElementById('video');
                 video.srcObject = mediaStream;
-                document.getElementById('start-camera').disabled = true;
-                document.getElementById('stop-camera').disabled = false;
+                document.getElementById('start-camera-btn').disabled = true;
+                document.getElementById('stop-camera-btn').disabled = false;
                 document.getElementById('kiosk-status').textContent = 'Camera running - Waiting for face...';
                 beginAutoCapture();
             } catch (err) {
@@ -2181,9 +2685,9 @@
                 mediaStream = null;
             }
             document.getElementById('video').srcObject = null;
-            document.getElementById('start-camera').disabled = false;
-            document.getElementById('stop-camera').disabled = true;
-            document.getElementById('kiosk-status').textContent = 'Camera idle';
+            document.getElementById('start-camera-btn').disabled = false;
+            document.getElementById('stop-camera-btn').disabled = true;
+            document.getElementById('kiosk-status').textContent = 'Camera not started';
         }
 
         function beginAutoCapture() {
@@ -2232,11 +2736,20 @@
         }
 
         function logEvent(text) {
-            const container = document.getElementById('events');
-            const div = document.createElement('div');
-            div.textContent = `${new Date().toLocaleTimeString()} - ${text}`;
-            container.prepend(div);
-            while (container.childNodes.length > 10) container.removeChild(container.lastChild);
+            const eventsDiv = document.getElementById('events');
+            if (!eventsDiv) return;
+            
+            const eventItem = document.createElement('div');
+            eventItem.style.padding = '8px';
+            eventItem.style.borderBottom = '1px solid #eee';
+            eventItem.style.color = '#333';
+            eventItem.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${text}`;
+            eventsDiv.insertBefore(eventItem, eventsDiv.firstChild);
+            
+            // Keep only last 50 events
+            while (eventsDiv.children.length > 50) {
+                eventsDiv.removeChild(eventsDiv.lastChild);
+            }
         }
 
         // Filtering functions
@@ -2973,120 +3486,6 @@
             document.getElementById('confidence-threshold-display').textContent = value + '%';
         }
 
-        function enterKioskMode() {
-            if (!currentSessionId) {
-                showError('Please select a session first');
-                return;
-            }
-            
-            const kioskWindow = window.open('', 'kiosk', 'fullscreen=yes');
-            if (!kioskWindow) {
-                showError('Please allow popups to enter kiosk mode');
-                return;
-            }
-            
-            kioskWindow.document.write(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Kiosk Mode</title>
-                    <style>
-                        * { margin: 0; padding: 0; box-sizing: border-box; }
-                        body {
-                            font-family: Arial, sans-serif;
-                            background: #000;
-                            color: white;
-                            display: flex;
-                            flex-direction: column;
-                            align-items: center;
-                            justify-content: center;
-                            height: 100vh;
-                        }
-                        video {
-                            max-width: 90%;
-                            max-height: 70vh;
-                            border: 3px solid #007bff;
-                            border-radius: 8px;
-                        }
-                        .status {
-                            margin-top: 20px;
-                            font-size: 24px;
-                            text-align: center;
-                        }
-                        .success { color: #28a745; }
-                        .error { color: #dc3545; }
-                        .info { color: #17a2b8; }
-                    </style>
-                </head>
-                <body>
-                    <video id="video" autoplay playsinline muted></video>
-                    <div id="status" class="status info">Initializing camera...</div>
-                    <script>
-                        const API_BASE_URL = '${API_BASE_URL}';
-                        const sessionId = ${currentSessionId};
-                        let mediaStream = null;
-                        let captureInterval = null;
-                        
-                        async function startKiosk() {
-                            try {
-                                mediaStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
-                                document.getElementById('video').srcObject = mediaStream;
-                                document.getElementById('status').textContent = 'Camera ready - Waiting for face...';
-                                document.getElementById('status').className = 'status info';
-                                
-                                captureInterval = setInterval(captureFrame, 1500);
-                            } catch (err) {
-                                document.getElementById('status').textContent = 'Camera error: ' + err.message;
-                                document.getElementById('status').className = 'status error';
-                            }
-                        }
-                        
-                        async function captureFrame() {
-                            const video = document.getElementById('video');
-                            if (video.readyState < 2) return;
-                            
-                            const canvas = document.createElement('canvas');
-                            canvas.width = video.videoWidth || 1280;
-                            canvas.height = video.videoHeight || 720;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(video, 0, 0);
-                            const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-                            
-                            try {
-                                const resp = await fetch(API_BASE_URL + '/api/attendance/check-in', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ session_id: sessionId, face_image_base64: base64 })
-                                });
-                                const json = await resp.json();
-                                
-                                if (json.success) {
-                                    document.getElementById('status').textContent = 'Welcome ' + json.student_name + '!';
-                                    document.getElementById('status').className = 'status success';
-                                    setTimeout(() => {
-                                        document.getElementById('status').textContent = 'Waiting for next person...';
-                                        document.getElementById('status').className = 'status info';
-                                    }, 3000);
-                                } else {
-                                    document.getElementById('status').textContent = json.message || 'Face not recognized';
-                                    document.getElementById('status').className = 'status error';
-                                }
-                            } catch (err) {
-                                console.error('Check-in error:', err);
-                            }
-                        }
-                        
-                        startKiosk();
-                        
-                        window.addEventListener('beforeunload', () => {
-                            if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
-                            if (captureInterval) clearInterval(captureInterval);
-                        });
-                    <\/script>
-                </body>
-                </html>
-            `);
-        }
 
         async function loadCameraDevices(selectId) {
             try {
@@ -3132,6 +3531,7 @@
                 loadAttendanceRecords();
             }
             checkApiConnection();
+            loadInProgressSessions(); // Refresh in-progress sessions list
         }, 30000);
     </script>
 </body>
