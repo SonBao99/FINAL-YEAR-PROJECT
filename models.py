@@ -5,8 +5,9 @@ from src.models.models import (
     Course,
     Session,
     AttendanceRecord,
-    Lecturer
+    Lecturer,
+    session_student_enrollment
 )
 
-__all__ = ['Base', 'Student', 'Course', 'Session', 'AttendanceRecord', 'Lecturer']
+__all__ = ['Base', 'Student', 'Course', 'Session', 'AttendanceRecord', 'Lecturer', 'session_student_enrollment']
 

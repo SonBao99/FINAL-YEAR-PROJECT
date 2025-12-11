@@ -1,10 +1,19 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Float
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Float, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import json
 
 Base = declarative_base()
+
+# Association table for many-to-many relationship between Students and Sessions
+session_student_enrollment = Table(
+    'session_student_enrollment',
+    Base.metadata,
+    Column('session_id', Integer, ForeignKey('sessions.id'), primary_key=True),
+    Column('student_id', Integer, ForeignKey('students.id'), primary_key=True),
+    Column('enrolled_at', DateTime, default=datetime.utcnow)
+)
 
 class Student(Base):
     __tablename__ = "students"
@@ -20,6 +29,7 @@ class Student(Base):
     
     # Relationships
     attendance_records = relationship("AttendanceRecord", back_populates="student")
+    enrolled_sessions = relationship("Session", secondary=session_student_enrollment, back_populates="enrolled_students")
 
 class Course(Base):
     __tablename__ = "courses"
@@ -53,6 +63,7 @@ class Session(Base):
     # Relationships
     course = relationship("Course", back_populates="sessions")
     attendance_records = relationship("AttendanceRecord", back_populates="session")
+    enrolled_students = relationship("Student", secondary=session_student_enrollment, back_populates="enrolled_sessions")
 
 class AttendanceRecord(Base):
     __tablename__ = "attendance_records"

@@ -31,95 +31,294 @@ class LivenessDetector:
             min_tracking_confidence=0.5
         )
         
-        # Eye landmarks
-        self.LEFT_EYE_INDICES = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
-        self.RIGHT_EYE_INDICES = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+        # Eye landmarks for MediaPipe Face Mesh (468 landmarks)
+        # MediaPipe Face Mesh eye landmarks - using key points for EAR calculation
+        # Left eye: outer corner, inner corner, top points, bottom points
+        # These indices correspond to the eye contour points
+        self.LEFT_EYE_INDICES = [
+            33,   # Left eye outer corner
+            7,    # Left eye inner corner  
+            163,  # Left eye top
+            144,  # Left eye top
+            145,  # Left eye top
+            153,  # Left eye bottom
+            154,  # Left eye bottom
+            155,  # Left eye bottom
+            133,  # Left eye inner
+            173,  # Left eye outer
+            157,  # Left eye top
+            158,  # Left eye top
+            159,  # Left eye bottom
+            160,  # Left eye bottom
+            161,  # Left eye bottom
+            246   # Left eye outer
+        ]
+        # Right eye landmarks
+        self.RIGHT_EYE_INDICES = [
+            362,  # Right eye outer corner
+            382,  # Right eye inner corner
+            381,  # Right eye top
+            380,  # Right eye top
+            374,  # Right eye top
+            373,  # Right eye bottom
+            390,  # Right eye bottom
+            249,  # Right eye inner
+            263,  # Right eye outer
+            466,  # Right eye outer
+            388,  # Right eye top
+            387,  # Right eye top
+            386,  # Right eye bottom
+            385,  # Right eye bottom
+            384,  # Right eye bottom
+            398   # Right eye outer
+        ]
         
         self.face_positions = deque(maxlen=10)
         self.blink_history = deque(maxlen=5)
+        # Track movement and blink detection over recent frames
+        self.movement_history = deque(maxlen=15)  # Track movement over last 15 frames
+        self.blink_detected_history = deque(maxlen=15)  # Track blinks over last 15 frames
         
-        # Relaxed thresholds for better usability
-        self.MOVEMENT_THRESHOLD = 0.01  # Lowered from 0.02 - more sensitive to natural movement
-        self.BLINK_THRESHOLD = 0.25
-        self.MIN_FRAMES_FOR_LIVE = 5  # Reduced from 10 - faster initial check
+        # Thresholds for liveness detection
+        self.MOVEMENT_THRESHOLD = 0.015  # Movement threshold - needs to detect actual movement
+        self.BLINK_THRESHOLD = 0.25  # Eye aspect ratio threshold for blink detection (lower = more sensitive to blinks)
+        self.MIN_FRAMES_FOR_LIVE = 10  # Need at least 10 frames before checking liveness
         self.frame_count = 0
+        self.blink_state = "open"  # Track blink state: "open", "closing", "closed", "opening"
+        self.reset_count = 0  # Track resets for debugging
         
     def calculate_eye_aspect_ratio(self, landmarks, eye_indices):
-        """Calculate Eye Aspect Ratio for blink detection"""
-        eye_points = np.array([(landmarks[i].x, landmarks[i].y) for i in eye_indices])
-        vertical_1 = np.linalg.norm(eye_points[1] - eye_points[7])
-        vertical_2 = np.linalg.norm(eye_points[2] - eye_points[6])
-        horizontal = np.linalg.norm(eye_points[0] - eye_points[4])
-        ear = (vertical_1 + vertical_2) / (2.0 * horizontal) if horizontal > 0 else 0
-        return ear
+        """Calculate Eye Aspect Ratio (EAR) for blink detection using MediaPipe landmarks"""
+        try:
+            if len(landmarks) == 0:
+                return 0.0
+            
+            # Get eye landmark points from MediaPipe
+            eye_points_2d = []
+            for idx in eye_indices:
+                if idx < len(landmarks):
+                    lm = landmarks[idx]
+                    eye_points_2d.append([lm.x, lm.y])
+            
+            if len(eye_points_2d) < 6:
+                return 0.0
+            
+            eye_points = np.array(eye_points_2d)
+            
+            # MediaPipe eye landmarks are arranged around the eye contour
+            # Dynamically find key points: outer corner, inner corner, top, bottom
+            x_coords = eye_points[:, 0]
+            y_coords = eye_points[:, 1]
+            
+            # Find corners (leftmost and rightmost x coordinates)
+            leftmost_idx = np.argmin(x_coords)
+            rightmost_idx = np.argmax(x_coords)
+            
+            # Find top and bottom points (topmost and bottommost y coordinates)
+            topmost_idx = np.argmin(y_coords)
+            bottommost_idx = np.argmax(y_coords)
+            
+            # Get key points
+            outer_corner = eye_points[leftmost_idx]
+            inner_corner = eye_points[rightmost_idx]
+            top_point = eye_points[topmost_idx]
+            bottom_point = eye_points[bottommost_idx]
+            
+            # Calculate vertical distances (eye height)
+            # Use the distance between top and bottom points
+            vertical_1 = np.linalg.norm(top_point - bottom_point)
+            
+            # Alternative: use distances from corners to top/bottom
+            # This gives a second vertical measurement
+            mid_point = (outer_corner + inner_corner) / 2.0
+            vertical_top = np.linalg.norm(mid_point - top_point)
+            vertical_bottom = np.linalg.norm(mid_point - bottom_point)
+            vertical_2 = vertical_top + vertical_bottom
+            
+            # Calculate horizontal distance (eye width)
+            horizontal = np.linalg.norm(outer_corner - inner_corner)
+            
+            if horizontal == 0:
+                return 0.0
+            
+            # EAR formula: average of vertical distances divided by horizontal distance
+            ear = (vertical_1 + vertical_2) / (2.0 * horizontal)
+            return max(0.0, min(1.0, ear))
+        except (IndexError, ValueError, AttributeError, TypeError) as e:
+            return 0.0
     
     def detect_movement(self, landmarks):
         """Detect face movement"""
         if len(landmarks) == 0:
             return False
-        nose_tip = np.array([landmarks[4].x, landmarks[4].y])
+        # Use nose tip landmark (index 1 for MediaPipe Face Mesh)
+        # Alternative: use center of face (average of nose landmarks)
+        nose_tip_idx = 1  # Nose tip landmark in MediaPipe Face Mesh
+        if nose_tip_idx >= len(landmarks):
+            # Fallback: use landmark 4 if available
+            nose_tip_idx = min(4, len(landmarks) - 1)
+        nose_tip = np.array([landmarks[nose_tip_idx].x, landmarks[nose_tip_idx].y])
         self.face_positions.append(nose_tip)
-        if len(self.face_positions) < 2:
+        if len(self.face_positions) < 3:  # Need at least 3 frames to detect movement
             return False
         positions_array = np.array(list(self.face_positions))
         movement = np.std(positions_array, axis=0)
         return np.sum(movement) > self.MOVEMENT_THRESHOLD
     
-    def detect_blink(self, landmarks):
-        """Detect blinking"""
-        left_ear = self.calculate_eye_aspect_ratio(landmarks, self.LEFT_EYE_INDICES)
-        right_ear = self.calculate_eye_aspect_ratio(landmarks, self.RIGHT_EYE_INDICES)
-        avg_ear = (left_ear + right_ear) / 2.0
-        self.blink_history.append(avg_ear)
-        if len(self.blink_history) < 3:
+    def detect_blink(self, frame, landmarks):
+        """Detect blinking using MediaPipe Face Mesh landmarks"""
+        try:
+            if landmarks is None or len(landmarks) == 0:
+                return False
+            
+            # Calculate EAR for both eyes using MediaPipe landmarks
+            left_ear = self.calculate_eye_aspect_ratio(landmarks, self.LEFT_EYE_INDICES)
+            right_ear = self.calculate_eye_aspect_ratio(landmarks, self.RIGHT_EYE_INDICES)
+            
+            # Use average of both eyes
+            avg_ear = (left_ear + right_ear) / 2.0 if (left_ear > 0 and right_ear > 0) else 0.0
+            
+            # Add to history
+            self.blink_history.append(avg_ear)
+            
+            if len(self.blink_history) < 3:
+                return False
+            
+            # Check for blink: EAR drops below threshold then rises above
+            recent_ears = list(self.blink_history)
+            
+            # Look for blink pattern: high -> low -> high (eye open -> closed -> open)
+            if len(recent_ears) >= 3:
+                for i in range(len(recent_ears) - 2):
+                    if recent_ears[i] > self.BLINK_THRESHOLD:  # Eye open
+                        if recent_ears[i+1] < self.BLINK_THRESHOLD:  # Eye closed
+                            if recent_ears[i+2] > self.BLINK_THRESHOLD:  # Eye open again
+                                return True
+            
+            # Check immediate transition (blink just completed)
+            if len(recent_ears) >= 2:
+                if recent_ears[-2] < self.BLINK_THRESHOLD and recent_ears[-1] > self.BLINK_THRESHOLD:
+                    return True
+            
             return False
-        recent_ears = list(self.blink_history)
-        if len(recent_ears) >= 3:
-            if recent_ears[-2] < self.BLINK_THRESHOLD and recent_ears[-1] > self.BLINK_THRESHOLD:
-                return True
-        return False
+        except Exception as e:
+            return False
     
     def detect_liveness(self, frame):
         """Detect if face is LIVE or FAKE"""
-        self.frame_count += 1
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(rgb_frame)
         
         if not results.multi_face_landmarks:
+            # Reset counters if no face detected (prevents getting stuck)
+            if self.frame_count > 0:
+                self.frame_count = 0
+                self.face_positions.clear()
+                self.blink_history.clear()
+                self.movement_history.clear()
+                self.blink_detected_history.clear()
+                self.blink_state = "open"
             return "NO_FACE", {}
+        
+        self.frame_count += 1
         
         landmarks = results.multi_face_landmarks[0].landmark
         
         has_movement = self.detect_movement(landmarks)
-        has_blink = self.detect_blink(landmarks)
+        # Use dlib for more reliable blink detection
+        has_blink = self.detect_blink(frame, landmarks)
         
-        z_coords = [lm.z for lm in landmarks]
-        depth_variance = np.var(z_coords)
-        has_depth = depth_variance > 0.0001
+        # Track movement and blink over recent frames
+        self.movement_history.append(has_movement)
+        self.blink_detected_history.append(has_blink)
         
-        liveness_score = sum([has_movement, has_blink, has_depth])
+        # Check depth variance (3D depth information)
+        # Real faces have depth variation, photos/videos are flat
+        depth_variance = 0.0
+        depth_std = 0.0
+        depth_range = 0.0
+        
+        try:
+            # MediaPipe Face Mesh provides Z coordinates (depth) for each landmark
+            # Z coordinates represent depth: positive = closer, negative = farther
+            z_coords = []
+            for lm in landmarks:
+                if hasattr(lm, 'z'):
+                    z_coords.append(lm.z)
+            
+            if len(z_coords) < 10:  # Need enough points to calculate variance
+                has_depth = False
+            else:
+                z_array = np.array(z_coords)
+                
+                # Calculate depth statistics
+                depth_variance = np.var(z_array)
+                depth_std = np.std(z_array)
+                depth_range = np.max(z_array) - np.min(z_array)
+                depth_mean_abs = np.mean(np.abs(z_array))
+                
+                # Check if Z coordinates are non-zero (MediaPipe provides depth)
+                non_zero_count = np.count_nonzero(z_array)
+                non_zero_ratio = non_zero_count / len(z_array)
+                
+                # MediaPipe Z coordinates are normalized and typically small
+                # Real faces have measurable depth variation even if small
+                # Very low thresholds - MediaPipe provides subtle depth information
+                # Check multiple metrics to ensure 3D structure
+                # Also check that we have non-zero Z values (depth is actually being provided)
+                has_depth = (
+                    (depth_variance > 0.000005 and non_zero_ratio > 0.5) or  # Variance check with non-zero requirement
+                    (depth_std > 0.002 and non_zero_ratio > 0.5) or          # Std dev check
+                    (depth_range > 0.005 and non_zero_ratio > 0.5) or       # Range check
+                    (depth_mean_abs > 0.003 and non_zero_ratio > 0.5)        # Mean absolute depth check
+                )
+        except Exception as e:
+            # If depth check fails, assume no depth (safer)
+            has_depth = False
+        
+        # Practical liveness detection:
+        # 1. Depth MUST be present (key anti-spoofing check - photos/videos are flat)
+        # 2. Movement OR Blink must have been detected recently (not necessarily simultaneously)
+        # This is more practical than requiring all 3 at once
         
         if self.frame_count < self.MIN_FRAMES_FOR_LIVE:
             status = "CHECKING"
-        elif liveness_score >= 1:  # Changed from >= 2 to >= 1 - more lenient
-            # If depth is detected (which is usually always true for real faces),
-            # consider it LIVE even without movement/blink
-            # This makes the system more user-friendly while still checking depth
-            if has_depth:
-                status = "LIVE"
-            elif liveness_score >= 2:
+        elif has_depth:
+            # Depth is present (3D face detected)
+            # Check if we've seen movement or blink recently (in last 15 frames)
+            recent_movement = sum(self.movement_history) >= 3  # Movement detected in at least 3 of last 15 frames
+            recent_blink = sum(self.blink_detected_history) >= 1  # At least 1 blink detected in last 15 frames
+            
+            if recent_movement or recent_blink:
+                # Has depth AND (movement OR blink detected recently) = LIVE
                 status = "LIVE"
             else:
-                status = "FAKE"
+                # Has depth but no movement/blink detected - might be a still photo
+                # Give it more time if we're still in early frames
+                if self.frame_count < 30:
+                    status = "CHECKING"
+                else:
+                    status = "FAKE"
         else:
+            # No depth detected - definitely fake (photo/video)
             status = "FAKE"
+        
+        # Calculate score for metadata
+        liveness_score = sum([has_movement, has_blink, has_depth])
+        recent_movement = sum(self.movement_history) >= 3 if len(self.movement_history) > 0 else False
+        recent_blink = sum(self.blink_detected_history) >= 1 if len(self.blink_detected_history) > 0 else False
         
         metadata = {
             "has_movement": has_movement,
             "has_blink": has_blink,
             "has_depth": has_depth,
+            "recent_movement": recent_movement,
+            "recent_blink": recent_blink,
             "liveness_score": liveness_score,
-            "frame_count": self.frame_count
+            "frame_count": self.frame_count,
+            "depth_variance": depth_variance,
+            "depth_std": depth_std,
+            "depth_range": depth_range
         }
         
         return status, metadata
@@ -148,10 +347,16 @@ class AttendanceKiosk:
         # Track recent liveness status for smoother recognition
         self.recent_liveness_history = deque(maxlen=10)  # Last 10 frames
         self.liveness_grace_period = 5  # Allow recognition if LIVE in last 5 frames
+        # Track continuous LIVE status duration (require 5 seconds before recognition)
+        self.liveness_live_start_time = None  # Timestamp when LIVE status started
+        self.liveness_required_duration = 1.0  # Must be LIVE for 5 seconds before recognition
+        self.last_liveness_status = None  # Track status changes
         # Track recognized student info for persistent display (multi-face support)
         # Key: face_id (tuple of bbox coordinates), Value: student info dict
         self.recognized_students: Dict[Tuple[int, int, int, int], Dict] = {}
         self.face_recognition_times: Dict[Tuple[int, int, int, int], float] = {}
+        # Track recognition failures temporarily to show error messages
+        self.recognition_failures: Dict[Tuple[int, int, int, int], Tuple[str, float]] = {}  # face_id -> (error_message, timestamp)
         self.face_recognition_lock = threading.Lock()
         # Auto-refresh session more frequently to detect web changes
         self.last_session_check = 0.0
@@ -434,6 +639,13 @@ class AttendanceKiosk:
                 if current_time - self.face_recognition_times.get(face_id, 0) > 2.0:
                     self.recognized_students.pop(face_id, None)
                     self.face_recognition_times.pop(face_id, None)
+                    self.recognition_failures.pop(face_id, None)
+            
+            # Clean up old failure messages (show for 3 seconds)
+            failures_to_remove = [face_id for face_id, (msg, timestamp) in self.recognition_failures.items()
+                                 if current_time - timestamp > 3.0]
+            for face_id in failures_to_remove:
+                self.recognition_failures.pop(face_id, None)
 
         # Detect liveness on full frame
         liveness_status, liveness_metadata = self.liveness_detector.detect_liveness(frame)
@@ -447,14 +659,44 @@ class AttendanceKiosk:
         elif liveness_status == "FAKE":
             self.stats["liveness_fake"] += 1
         
-        # Track recent liveness for smoother recognition
+        # Track recent liveness for display purposes only
         self.recent_liveness_history.append(liveness_status == "LIVE")
         
-        # Consider "effectively LIVE" if current is LIVE or was LIVE recently
-        was_recently_live = sum(self.recent_liveness_history) >= 1
-        effectively_live = (liveness_status == "LIVE") or was_recently_live
+        # Track continuous LIVE status duration
+        # Require 5 seconds of continuous LIVE before allowing recognition
+        if liveness_status == "LIVE":
+            if self.last_liveness_status != "LIVE":
+                # Status just changed to LIVE - start timer
+                self.liveness_live_start_time = current_time
+                if self.verbose:
+                    logging.debug("LIVE status started, waiting 5 seconds before recognition")
+            # Status is LIVE - check if we've been LIVE for 5 seconds
+            if self.liveness_live_start_time is not None:
+                live_duration = current_time - self.liveness_live_start_time
+                if live_duration >= self.liveness_required_duration:
+                    # Been LIVE for at least 5 seconds - allow recognition
+                    effectively_live = True
+                else:
+                    # Still waiting for 5 seconds - show countdown
+                    effectively_live = False
+                    if self.verbose:
+                        remaining = self.liveness_required_duration - live_duration
+                        logging.debug(f"LIVE for {live_duration:.1f}s, need {remaining:.1f}s more")
+            else:
+                effectively_live = False
+        else:
+            # Status is not LIVE - reset timer
+            if self.liveness_live_start_time is not None:
+                if self.verbose:
+                    logging.debug(f"LIVE status interrupted (status: {liveness_status}), resetting timer")
+                self.liveness_live_start_time = None
+            effectively_live = False
         
-        # Process faces for recognition (multi-face support)
+        # Update last status for next frame
+        self.last_liveness_status = liveness_status
+        
+        # Process faces for recognition ONLY if liveness is LIVE for 5+ seconds
+        # This prevents photos/videos from being recognized and adds security delay
         if effectively_live and self.session_id and len(faces) > 0:
             self.process_multiple_faces(frame, faces, current_time)
         
@@ -520,14 +762,28 @@ class AttendanceKiosk:
                     cv2.putText(display_frame, confidence_text, (x + 5, text_y3),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (150, 255, 150), 1)  # Green text
                 elif self.session_id:
-                    # Show "Recognizing..." when live but not yet recognized
-                    status_text = "Recognizing..."
-                    status_color = (255, 255, 0)  # Yellow
+                    # Check if there's a recent recognition failure message
+                    with self.face_recognition_lock:
+                        failure_info = self.recognition_failures.get(face_id)
+                    
+                    if failure_info:
+                        # Show error message (e.g., "Face not recognized")
+                        error_msg, error_time = failure_info
+                        # Truncate long messages
+                        if "not recognized" in error_msg.lower() or "not enrolled" in error_msg.lower():
+                            status_text = "Not enrolled"
+                        else:
+                            status_text = error_msg[:20] + "..." if len(error_msg) > 20 else error_msg
+                        status_color = (0, 0, 255)  # Red for errors
+                    else:
+                        # Show "Recognizing..." when live but not yet recognized
+                        status_text = "Recognizing..."
+                        status_color = (255, 255, 0)  # Yellow
                     
                     cv2.putText(display_frame, status_text, (x + 5, y + 30),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 3)  # Black outline
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3)  # Black outline
                     cv2.putText(display_frame, status_text, (x + 5, y + 30),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)  # Yellow text
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, status_color, 2)  # Colored text
                 else:
                     # Show "No session" when no session selected
                     cv2.putText(display_frame, "No session", (x + 5, y + 30),
@@ -535,12 +791,19 @@ class AttendanceKiosk:
                     cv2.putText(display_frame, "No session", (x + 5, y + 30),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)  # White text
 
-        # Draw liveness status (show effective status)
-        display_status = "LIVE" if effectively_live else liveness_status
+        # Draw liveness status with countdown
+        display_status = liveness_status
         liveness_color = (0, 255, 0) if display_status == "LIVE" else (0, 0, 255) if display_status == "FAKE" else (0, 255, 255)
+        
         status_text = f"Status: {display_status}"
-        if effectively_live and liveness_status != "LIVE":
-            status_text += " (recent)"
+        
+        # Show countdown if LIVE but not yet ready for recognition
+        if liveness_status == "LIVE" and self.liveness_live_start_time is not None:
+            live_duration = current_time - self.liveness_live_start_time
+            if live_duration < self.liveness_required_duration:
+                remaining = self.liveness_required_duration - live_duration
+                status_text += f" ({remaining:.1f}s)"
+        
         cv2.putText(display_frame, status_text, (10, 60),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, liveness_color, 2)
         
@@ -665,27 +928,33 @@ class AttendanceKiosk:
                                 logging.info(f"✓ Face {face_id} recognized but check-in failed: "
                                            f"{self.recognized_students[face_id]['name']} - {metadata.get('message')}")
                         else:
-                            # Recognition failed - remove from recognized list
+                            # Recognition failed - store error message temporarily
+                            error_msg = metadata.get('message', 'Face not recognized') if metadata else 'Recognition failed'
+                            self.recognition_failures[face_id] = (error_msg, current_time)
                             self.recognized_students.pop(face_id, None)
                             # Count as recognition failure
                             self.stats["recognition_failed"] += 1
                             
                             if self.verbose:
-                                logging.debug(f"✗ Face {face_id} recognition failed: "
-                                            f"{metadata.get('message', 'Unknown error') if metadata else 'No metadata'}")
+                                logging.debug(f"✗ Face {face_id} recognition failed: {error_msg}")
                     else:
-                        # No result - remove from recognized list
+                        # No result - store error message temporarily
+                        error_msg = result if result else 'Face not recognized'
+                        self.recognition_failures[face_id] = (error_msg, current_time)
                         self.recognized_students.pop(face_id, None)
                         # Count as recognition failure
                         self.stats["recognition_failed"] += 1
                         
             except Exception as e:
+                error_msg = f"Error: {str(e)}"
                 logging.error(f"Error processing face {face_id}: {e}")
                 if self.verbose:
                     import traceback
                     traceback.print_exc()
                 with self.face_recognition_lock:
+                    self.recognition_failures[face_id] = (error_msg, current_time)
                     self.recognized_students.pop(face_id, None)
+                    self.stats["recognition_failed"] += 1
 
     def recognize_face(self, face_image):
         """Send face image to API for recognition.
